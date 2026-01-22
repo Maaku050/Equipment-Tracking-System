@@ -1,0 +1,672 @@
+// _helpers/firebaseHelpers.ts
+import {
+  collection,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+  Timestamp,
+  writeBatch,
+} from "firebase/firestore";
+import { db } from "@/firebase/firebaseConfig";
+
+// ============================================
+// TYPE DEFINITIONS
+// ============================================
+
+export interface BorrowedItem {
+  id: string;
+  equipmentId: string;
+  itemName: string;
+  quantity: number;
+  pricePerQuantity: number;
+  returned: boolean;
+  returnedQuantity: number;
+  damagedQuantity: number;
+  lostQuantity: number;
+  damageNotes: string;
+}
+
+export type TransactionStatus =
+  | "Request"
+  | "Ongoing"
+  | "Overdue"
+  | "Incomplete"
+  | "Incomplete and Overdue"
+  | "Complete"
+  | "Complete and Overdue";
+
+export interface Transaction {
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  items: BorrowedItem[];
+  borrowedDate: Timestamp;
+  dueDate: Timestamp;
+  status: TransactionStatus;
+  totalPrice: number;
+  fineAmount: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Equipment {
+  name: string;
+  description: string;
+  totalQuantity: number;
+  availableQuantity: number;
+  borrowedQuantity: number;
+  pricePerUnit: number;
+  condition: "good" | "fair" | "needs repair";
+  status: "available" | "unavailable" | "maintenance";
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface User {
+  id: string;
+  uid: string;
+  email: string;
+  name: string;
+  role: "student" | "staff" | "admin";
+  course: string;
+  contactNumber: string;
+  status: "active" | "suspended" | "inactive";
+  imageUrl: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+/**
+ * Determines the correct status based on transaction state and due date
+ */
+export const determineTransactionStatus = (
+  items: BorrowedItem[],
+  dueDate: Date,
+  currentStatus: TransactionStatus,
+): TransactionStatus => {
+  const now = new Date();
+  const isOverdue = now > dueDate;
+
+  // Check if all items are fully returned
+  const allReturned = items.every(
+    (item) => item.returned && item.returnedQuantity === item.quantity,
+  );
+
+  // Check if any items are partially returned
+  const someReturned = items.some(
+    (item) =>
+      item.returnedQuantity > 0 && item.returnedQuantity < item.quantity,
+  );
+
+  // If this is a request, don't change status based on due date
+  if (currentStatus === "Request") {
+    return "Request";
+  }
+
+  // Determine status based on return state and due date
+  if (allReturned) {
+    return isOverdue ? "Complete and Overdue" : "Complete";
+  } else if (someReturned || items.some((item) => item.returnedQuantity > 0)) {
+    return isOverdue ? "Incomplete and Overdue" : "Incomplete";
+  } else {
+    return isOverdue ? "Overdue" : "Ongoing";
+  }
+};
+
+/**
+ * Updates all transaction statuses based on current date
+ * This should be called periodically or on app load
+ */
+export const updateOverdueTransactions = async () => {
+  try {
+    const transactionsRef = collection(db, "transactions");
+    const snapshot = await getDocs(transactionsRef);
+    const batch = writeBatch(db);
+    let updatedCount = 0;
+
+    const now = new Date();
+
+    for (const docSnap of snapshot.docs) {
+      const transaction = docSnap.data() as Transaction;
+      const dueDate = transaction.dueDate.toDate();
+
+      // Calculate what the status should be
+      const correctStatus = determineTransactionStatus(
+        transaction.items,
+        dueDate,
+        transaction.status,
+      );
+
+      // Only update if status has changed
+      if (correctStatus !== transaction.status) {
+        const transactionRef = doc(db, "transactions", docSnap.id);
+        batch.update(transactionRef, {
+          status: correctStatus,
+          updatedAt: Timestamp.now(),
+        });
+        updatedCount++;
+      }
+    }
+
+    if (updatedCount > 0) {
+      await batch.commit();
+      console.log(`Updated ${updatedCount} overdue transactions`);
+    }
+
+    return updatedCount;
+  } catch (error) {
+    console.error("Error updating overdue transactions:", error);
+    throw error;
+  }
+};
+
+// ============================================
+// USER FUNCTIONS
+// ============================================
+
+export const createUser = async (
+  userData: Omit<User, "createdAt" | "updatedAt">,
+) => {
+  try {
+    const userRef = doc(db, "users", userData.uid);
+    await updateDoc(userRef, {
+      ...userData,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+    return userRef.id;
+  } catch (error) {
+    console.error("Error creating user:", error);
+    throw error;
+  }
+};
+
+export const getUser = async (userId: string) => {
+  try {
+    const userRef = doc(db, "users", userId);
+    const userSnap = await getDoc(userRef);
+
+    if (userSnap.exists()) {
+      return { id: userSnap.id, ...userSnap.data() } as User & { id: string };
+    }
+    return null;
+  } catch (error) {
+    console.error("Error getting user:", error);
+    throw error;
+  }
+};
+
+// ============================================
+// EQUIPMENT FUNCTIONS
+// ============================================
+
+export const createEquipment = async (
+  equipmentData: Omit<Equipment, "createdAt" | "updatedAt">,
+) => {
+  try {
+    const docRef = await addDoc(collection(db, "equipment"), {
+      ...equipmentData,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+    return docRef.id;
+  } catch (error) {
+    console.error("Error creating equipment:", error);
+    throw error;
+  }
+};
+
+export const updateEquipmentQuantities = async (
+  equipmentId: string,
+  quantityChange: number,
+) => {
+  try {
+    const equipmentRef = doc(db, "equipment", equipmentId);
+    const equipmentSnap = await getDoc(equipmentRef);
+
+    if (equipmentSnap.exists()) {
+      const data = equipmentSnap.data() as Equipment;
+
+      await updateDoc(equipmentRef, {
+        availableQuantity: data.availableQuantity + quantityChange,
+        borrowedQuantity: data.borrowedQuantity - quantityChange,
+        updatedAt: Timestamp.now(),
+      });
+    }
+  } catch (error) {
+    console.error("Error updating equipment quantities:", error);
+    throw error;
+  }
+};
+
+export const getAllEquipment = async () => {
+  try {
+    const equipmentRef = collection(db, "equipment");
+    const snapshot = await getDocs(equipmentRef);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as (Equipment & { id: string })[];
+  } catch (error) {
+    console.error("Error getting equipment:", error);
+    throw error;
+  }
+};
+
+// ============================================
+// TRANSACTION FUNCTIONS
+// ============================================
+
+export const createTransaction = async (
+  studentId: string,
+  studentName: string,
+  studentEmail: string,
+  selectedEquipment: {
+    equipmentId: string;
+    name: string;
+    quantity: number;
+    pricePerUnit: number;
+  }[],
+  isAdminCreated: boolean = false,
+) => {
+  try {
+    const batch = writeBatch(db);
+
+    const items: BorrowedItem[] = selectedEquipment.map((equipment, index) => ({
+      id: `item-${Date.now()}-${index}`,
+      equipmentId: equipment.equipmentId,
+      itemName: equipment.name,
+      quantity: equipment.quantity,
+      pricePerQuantity: equipment.pricePerUnit,
+      returned: false,
+      returnedQuantity: 0,
+      damagedQuantity: 0,
+      lostQuantity: 0,
+      damageNotes: "",
+    }));
+
+    const totalPrice = items.reduce(
+      (sum, item) => sum + item.pricePerQuantity * item.quantity,
+      0,
+    );
+
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 7);
+
+    const transactionData: Transaction = {
+      studentId,
+      studentName,
+      studentEmail,
+      items,
+      borrowedDate: Timestamp.now(),
+      dueDate: Timestamp.fromDate(dueDate),
+      status: isAdminCreated ? "Ongoing" : "Request",
+      totalPrice,
+      fineAmount: 0,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+
+    const transactionRef = await addDoc(
+      collection(db, "transactions"),
+      transactionData,
+    );
+
+    // Update equipment quantities (reserve for both Request and Ongoing)
+    for (const equipment of selectedEquipment) {
+      const equipmentRef = doc(db, "equipment", equipment.equipmentId);
+      const equipmentSnap = await getDoc(equipmentRef);
+
+      if (equipmentSnap.exists()) {
+        const data = equipmentSnap.data() as Equipment;
+        batch.update(equipmentRef, {
+          availableQuantity: data.availableQuantity - equipment.quantity,
+          borrowedQuantity: data.borrowedQuantity + equipment.quantity,
+          updatedAt: Timestamp.now(),
+        });
+      }
+    }
+
+    await batch.commit();
+    return transactionRef.id;
+  } catch (error) {
+    console.error("Error creating transaction:", error);
+    throw error;
+  }
+};
+
+export const approveTransaction = async (transactionId: string) => {
+  try {
+    const transactionRef = doc(db, "transactions", transactionId);
+    await updateDoc(transactionRef, {
+      status: "Ongoing",
+      borrowedDate: Timestamp.now(), // Update borrowed date to approval time
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Error approving transaction:", error);
+    throw error;
+  }
+};
+
+export const denyTransaction = async (transactionId: string) => {
+  try {
+    const transactionRef = doc(db, "transactions", transactionId);
+    const transactionSnap = await getDoc(transactionRef);
+
+    if (transactionSnap.exists()) {
+      const transactionData = transactionSnap.data() as Transaction;
+      const batch = writeBatch(db);
+
+      // Return quantities to equipment
+      for (const item of transactionData.items) {
+        const equipmentRef = doc(db, "equipment", item.equipmentId);
+        const equipmentSnap = await getDoc(equipmentRef);
+
+        if (equipmentSnap.exists()) {
+          const equipmentData = equipmentSnap.data() as Equipment;
+
+          batch.update(equipmentRef, {
+            availableQuantity: equipmentData.availableQuantity + item.quantity,
+            borrowedQuantity: equipmentData.borrowedQuantity - item.quantity,
+            updatedAt: Timestamp.now(),
+          });
+        }
+      }
+
+      batch.delete(transactionRef);
+      await batch.commit();
+    }
+  } catch (error) {
+    console.error("Error denying transaction:", error);
+    throw error;
+  }
+};
+
+export const updateTransactionStatus = async (
+  transactionId: string,
+  newStatus: TransactionStatus,
+) => {
+  try {
+    const transactionRef = doc(db, "transactions", transactionId);
+    await updateDoc(transactionRef, {
+      status: newStatus,
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Error updating transaction status:", error);
+    throw error;
+  }
+};
+
+export const completeTransaction = async (
+  transactionId: string,
+  itemReturnStates: {
+    [itemId: string]: { checked: boolean; quantity: number };
+  },
+) => {
+  try {
+    const transactionRef = doc(db, "transactions", transactionId);
+    const transactionSnap = await getDoc(transactionRef);
+
+    if (!transactionSnap.exists()) {
+      throw new Error("Transaction not found");
+    }
+
+    const transactionData = transactionSnap.data() as Transaction;
+    const batch = writeBatch(db);
+
+    // Update items with return status
+    const updatedItems = transactionData.items.map((item) => ({
+      ...item,
+      returned: itemReturnStates[item.id]?.checked || item.returned,
+      returnedQuantity:
+        itemReturnStates[item.id]?.quantity || item.returnedQuantity,
+    }));
+
+    // Check if all items are fully returned
+    const allReturned = updatedItems.every(
+      (item) => item.returned && item.returnedQuantity === item.quantity,
+    );
+
+    // Check if overdue
+    const now = new Date();
+    const dueDate = transactionData.dueDate.toDate();
+    const isOverdue = now > dueDate;
+
+    // Calculate fine if overdue
+    let fineAmount = 0;
+    if (isOverdue) {
+      const daysOverdue = Math.ceil(
+        (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      fineAmount = daysOverdue * 10; // ₱10 per day overdue
+    }
+
+    // Determine new status using helper function
+    const newStatus = determineTransactionStatus(
+      updatedItems,
+      dueDate,
+      transactionData.status,
+    );
+
+    if (allReturned) {
+      // Move to records collection
+      const recordData = {
+        ...transactionData,
+        items: updatedItems,
+        status: newStatus,
+        finalStatus: newStatus,
+        fineAmount,
+        returnedDate: Timestamp.now(),
+        completedDate: Timestamp.now(),
+        archivedAt: Timestamp.now(),
+        notes: "",
+      };
+
+      await addDoc(collection(db, "records"), recordData);
+      batch.delete(transactionRef);
+
+      // Create fine document if overdue
+      if (isOverdue && fineAmount > 0) {
+        const fineData = {
+          transactionId,
+          studentId: transactionData.studentId,
+          studentName: transactionData.studentName,
+          fineType: "late_return",
+          amount: fineAmount,
+          reason: `${Math.ceil((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))} days overdue`,
+          daysOverdue: Math.ceil(
+            (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
+          ),
+          status: "unpaid",
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        };
+        await addDoc(collection(db, "fines"), fineData);
+      }
+    } else {
+      // Update transaction with incomplete status
+      batch.update(transactionRef, {
+        items: updatedItems,
+        status: newStatus,
+        fineAmount,
+        updatedAt: Timestamp.now(),
+      });
+    }
+
+    // Update equipment quantities for returned items
+    for (const item of updatedItems) {
+      const originalItem = transactionData.items.find((i) => i.id === item.id);
+      const quantityReturned =
+        item.returnedQuantity - (originalItem?.returnedQuantity || 0);
+
+      if (quantityReturned > 0) {
+        const equipmentRef = doc(db, "equipment", item.equipmentId);
+        const equipmentSnap = await getDoc(equipmentRef);
+
+        if (equipmentSnap.exists()) {
+          const equipmentData = equipmentSnap.data() as Equipment;
+
+          batch.update(equipmentRef, {
+            availableQuantity:
+              equipmentData.availableQuantity + quantityReturned,
+            borrowedQuantity: equipmentData.borrowedQuantity - quantityReturned,
+            updatedAt: Timestamp.now(),
+          });
+        }
+      }
+    }
+
+    await batch.commit();
+    return newStatus;
+  } catch (error) {
+    console.error("Error completing transaction:", error);
+    throw error;
+  }
+};
+
+export const deleteTransaction = async (transactionId: string) => {
+  try {
+    const transactionRef = doc(db, "transactions", transactionId);
+    const transactionSnap = await getDoc(transactionRef);
+
+    if (transactionSnap.exists()) {
+      const transactionData = transactionSnap.data() as Transaction;
+      const batch = writeBatch(db);
+
+      // Return quantities to equipment
+      for (const item of transactionData.items) {
+        const equipmentRef = doc(db, "equipment", item.equipmentId);
+        const equipmentSnap = await getDoc(equipmentRef);
+
+        if (equipmentSnap.exists()) {
+          const equipmentData = equipmentSnap.data() as Equipment;
+          const unreturned = item.quantity - item.returnedQuantity;
+
+          batch.update(equipmentRef, {
+            availableQuantity: equipmentData.availableQuantity + unreturned,
+            borrowedQuantity: equipmentData.borrowedQuantity - unreturned,
+            updatedAt: Timestamp.now(),
+          });
+        }
+      }
+
+      batch.delete(transactionRef);
+      await batch.commit();
+    }
+  } catch (error) {
+    console.error("Error deleting transaction:", error);
+    throw error;
+  }
+};
+
+export const getTransactionsByStatus = async (
+  status: TransactionStatus | "All",
+) => {
+  try {
+    const transactionsRef = collection(db, "transactions");
+    let q;
+
+    if (status === "All") {
+      q = query(transactionsRef);
+    } else {
+      q = query(transactionsRef, where("status", "==", status));
+    }
+
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error("Error getting transactions:", error);
+    throw error;
+  }
+};
+
+export const getStudentTransactions = async (studentId: string) => {
+  try {
+    const transactionsRef = collection(db, "transactions");
+    const q = query(transactionsRef, where("studentId", "==", studentId));
+
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error("Error getting student transactions:", error);
+    throw error;
+  }
+};
+
+// ============================================
+// NOTIFICATION FUNCTIONS
+// ============================================
+
+export const createNotification = async (
+  userId: string,
+  email: string,
+  type:
+    | "borrow_confirmation"
+    | "return_reminder"
+    | "overdue_notice"
+    | "approval_notification",
+  subject: string,
+  message: string,
+  transactionId: string,
+) => {
+  try {
+    const notificationData = {
+      userId,
+      email,
+      type,
+      subject,
+      message,
+      transactionId,
+      status: "pending",
+      createdAt: Timestamp.now(),
+    };
+
+    const docRef = await addDoc(
+      collection(db, "notifications"),
+      notificationData,
+    );
+    return docRef.id;
+  } catch (error) {
+    console.error("Error creating notification:", error);
+    throw error;
+  }
+};
+
+// ============================================
+// SETTINGS FUNCTIONS
+// ============================================
+
+export const getSettings = async () => {
+  try {
+    const settingsRef = doc(db, "settings", "general");
+    const settingsSnap = await getDoc(settingsRef);
+
+    if (settingsSnap.exists()) {
+      return settingsSnap.data();
+    }
+    return null;
+  } catch (error) {
+    console.error("Error getting settings:", error);
+    throw error;
+  }
+};
