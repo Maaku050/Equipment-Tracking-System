@@ -1,11 +1,8 @@
 // components/TransactionAccordion.tsx
-
 import React, { useState } from "react";
 import {
   StyleSheet,
   TouchableOpacity,
-  Modal,
-  Pressable,
   ScrollView,
   Text,
   Alert,
@@ -32,16 +29,27 @@ import {
 } from "@/components/ui/checkbox";
 import { Input, InputField } from "@/components/ui/input";
 import {
+  Modal,
+  ModalBackdrop,
+  ModalContent,
+  ModalHeader,
+  ModalCloseButton,
+  ModalBody,
+  ModalFooter,
+} from "@/components/ui/modal";
+import { Icon, CloseIcon } from "@/components/ui/icon";
+import {
   approveTransaction,
   BorrowedItem,
   completeTransaction,
   deleteTransaction,
   denyTransaction,
 } from "@/_helpers/firebaseHelpers";
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react-native";
+import { Check, ChevronDownIcon, ChevronUpIcon } from "lucide-react-native";
 
 interface Transaction {
   id: string;
+  transactionId: string;
   studentName: string;
   studentEmail: string;
   dueDate: Date;
@@ -112,21 +120,34 @@ export default function TransactionAccordion({
   };
 
   const handleItemCheck = (itemId: string, checked: boolean) => {
+    if (!selectedTransaction) return;
+
+    const item = selectedTransaction.items.find((i) => i.id === itemId);
+    if (!item) return;
+
     setItemReturnStates((prev) => ({
       ...prev,
       [itemId]: {
-        ...prev[itemId],
         checked,
+        // When checking, set quantity to full amount (complete return)
+        // When unchecking, reset to 0
+        quantity: checked ? item.quantity : 0,
       },
     }));
   };
 
   const handleQuantityChange = (itemId: string, quantity: string) => {
+    if (!selectedTransaction) return;
+
     const numQuantity = parseInt(quantity) || 0;
+    const item = selectedTransaction.items.find((i) => i.id === itemId);
+    if (!item) return;
+
     setItemReturnStates((prev) => ({
       ...prev,
       [itemId]: {
-        ...prev[itemId],
+        // Automatically check if quantity > 0, uncheck if 0
+        checked: numQuantity > 0,
         quantity: numQuantity,
       },
     }));
@@ -240,6 +261,18 @@ export default function TransactionAccordion({
     }
   };
 
+  const getReturnStatusText = (itemId: string) => {
+    const state = itemReturnStates[itemId];
+    const item = selectedTransaction?.items.find((i) => i.id === itemId);
+    if (!state || !item) return "";
+
+    if (state.quantity === 0) return "";
+    if (state.quantity === item.quantity) {
+      return "(Complete Return)";
+    }
+    return "(Partial Return)";
+  };
+
   if (loading) {
     return (
       <Box style={styles.centerContainer}>
@@ -295,6 +328,9 @@ export default function TransactionAccordion({
                             </HStack>
                             <Text style={styles.studentEmail}>
                               {transaction.studentEmail}
+                            </Text>
+                            <Text style={styles.transactionId}>
+                              {transaction.transactionId}
                             </Text>
                           </VStack>
                           <VStack style={{ alignItems: "flex-end" }}>
@@ -390,23 +426,24 @@ export default function TransactionAccordion({
         ))}
       </Accordion>
 
-      {/* Complete Transaction Modal */}
+      {/* Complete Transaction Modal - Now using Gluestack UI */}
       {onComplete && (
         <Modal
-          visible={showCompleteModal}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowCompleteModal(false)}
+          isOpen={showCompleteModal}
+          onClose={() => setShowCompleteModal(false)}
+          size="lg"
         >
-          <Pressable
-            style={styles.modalOverlay}
-            onPress={() => setShowCompleteModal(false)}
-          >
-            <Pressable
-              style={styles.modalContent}
-              onPress={(e) => e.stopPropagation()}
-            >
-              <Heading style={styles.modalTitle}>Complete Transaction</Heading>
+          <ModalBackdrop />
+          <ModalContent style={styles.modalContent}>
+            <ModalHeader>
+              <Heading size="lg" style={styles.modalTitle}>
+                Complete Transaction
+              </Heading>
+              <ModalCloseButton>
+                <Icon as={CloseIcon} />
+              </ModalCloseButton>
+            </ModalHeader>
+            <ModalBody>
               <Text style={styles.modalSubtitle}>
                 Mark returned items for {selectedTransaction?.studentName}
               </Text>
@@ -423,7 +460,7 @@ export default function TransactionAccordion({
                       style={styles.checkbox}
                     >
                       <CheckboxIndicator>
-                        <CheckboxIcon />
+                        <CheckboxIcon as={Check} />
                       </CheckboxIndicator>
                       <CheckboxLabel style={styles.checkboxLabel}>
                         {item.itemName}
@@ -447,6 +484,9 @@ export default function TransactionAccordion({
                       <Text style={styles.quantityTotal}>
                         / {item.quantity}
                       </Text>
+                      <Text style={styles.returnStatus}>
+                        {getReturnStatusText(item.id)}
+                      </Text>
                     </HStack>
 
                     {item.returnedQuantity > 0 && (
@@ -457,7 +497,8 @@ export default function TransactionAccordion({
                   </VStack>
                 ))}
               </ScrollView>
-
+            </ModalBody>
+            <ModalFooter>
               <HStack style={styles.modalActions}>
                 <Button
                   style={styles.modalCancelButton}
@@ -472,8 +513,8 @@ export default function TransactionAccordion({
                   <ButtonText>Submit</ButtonText>
                 </Button>
               </HStack>
-            </Pressable>
-          </Pressable>
+            </ModalFooter>
+          </ModalContent>
         </Modal>
       )}
     </>
@@ -508,7 +549,7 @@ const styles = StyleSheet.create({
   },
   headerLeft: {
     flex: 1,
-    gap: 4,
+    gap: 0,
   },
   studentName: {
     fontSize: 16,
@@ -518,6 +559,12 @@ const styles = StyleSheet.create({
   studentEmail: {
     fontSize: 13,
     color: "#6b7280",
+    marginBottom: 4,
+  },
+  transactionId: {
+    fontSize: 12,
+    color: "#9ca3af",
+    fontFamily: "monospace",
   },
   statusBadge: {
     padding: 2,
@@ -615,26 +662,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#ef4444",
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
   modalContent: {
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 24,
-    width: "100%",
-    maxWidth: 500,
-    maxHeight: "80%",
+    maxHeight: "85%",
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: "bold",
     color: "#1f2937",
-    marginBottom: 8,
   },
   modalSubtitle: {
     fontSize: 14,
@@ -653,6 +687,7 @@ const styles = StyleSheet.create({
   },
   checkbox: {
     marginBottom: 8,
+    marginLeft: 5,
   },
   checkboxLabel: {
     fontSize: 16,
@@ -663,6 +698,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     marginLeft: 32,
+    flexWrap: "wrap",
   },
   quantityLabel: {
     fontSize: 14,
@@ -678,6 +714,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6b7280",
   },
+  returnStatus: {
+    fontSize: 12,
+    color: "#3b82f6",
+    fontWeight: "600",
+    fontStyle: "italic",
+  },
   previouslyReturned: {
     fontSize: 12,
     color: "#10b981",
@@ -686,7 +728,7 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     gap: 12,
-    marginTop: 24,
+    width: "100%",
   },
   modalCancelButton: {
     flex: 1,

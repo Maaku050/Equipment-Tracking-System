@@ -1,3 +1,4 @@
+// _modals/equipmentDetailsModal.tsx
 import React, { useState, useEffect } from "react";
 import { ScrollView, View, Alert } from "react-native";
 import {
@@ -21,6 +22,7 @@ import { Edit, Package } from "lucide-react-native";
 import { Equipment } from "@/context/EquipmentContext";
 import { useTransaction } from "@/context/TransactionContext";
 import EditEquipmentModal from "@/_modals/editEquipmentModal";
+import { CloseIcon, Icon } from "@/components/ui/icon";
 
 interface BorrowerInfo {
   studentId: string;
@@ -128,7 +130,9 @@ export default function EquipmentDetailsModal({
         <ModalContent className="max-w-6xl h-[90vh]">
           <ModalHeader>
             <Heading size="lg">Equipment Details</Heading>
-            <ModalCloseButton />
+            <ModalCloseButton>
+              <Icon as={CloseIcon} />
+            </ModalCloseButton>
           </ModalHeader>
 
           <ModalBody
@@ -220,7 +224,10 @@ export default function EquipmentDetailsModal({
                 </HStack>
 
                 {borrowers.length === 0 ? (
-                  <Box className="p-8 items-center justify-center bg-background-50 rounded-lg">
+                  <Box
+                    className="p-8 items-center justify-center rounded-lg"
+                    style={{ marginTop: 20 }}
+                  >
                     <Package size={48} color="#999" />
                     <Text className="text-typography-500 mt-4 text-center">
                       No active borrowers

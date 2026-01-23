@@ -11,10 +11,11 @@ admin.initializeApp();
 
 const db = admin.firestore();
 const auth = admin.auth();
+const storage = admin.storage();
 
 const app = express();
 app.use(cors({ origin: true }));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" })); // Increase limit for base64 images
 
 // ============================================
 // TYPES
@@ -27,6 +28,7 @@ interface CreateUserRequest {
   role: "student" | "staff" | "admin";
   course: string;
   contactNumber: string;
+  imageBase64?: string; // Optional base64 encoded image
 }
 
 // ============================================
@@ -47,6 +49,87 @@ function isValidEmail(email: string): boolean {
 function isValidPhoneNumber(phone: string): boolean {
   const phoneRegex = /^(\+63|0)?9\d{9}$/;
   return phoneRegex.test(phone);
+}
+
+/**
+ * Upload image to Firebase Storage
+ * @param imageBase64 Base64 encoded image string
+ * @param uid User ID for file naming
+ * @returns Public download URL
+ */
+async function uploadUserImage(
+  imageBase64: string,
+  uid: string,
+): Promise<string> {
+  try {
+    // Convert base64 to buffer
+    const imageBuffer = Buffer.from(imageBase64, "base64");
+
+    // Detect image type from base64 header
+    let contentType = "image/jpeg"; // default
+    if (imageBase64.startsWith("/9j/")) {
+      contentType = "image/jpeg";
+    } else if (imageBase64.startsWith("iVBORw")) {
+      contentType = "image/png";
+    } else if (imageBase64.startsWith("R0lGOD")) {
+      contentType = "image/gif";
+    }
+
+    // Get file extension
+    const extension = contentType.split("/")[1];
+
+    // Create file reference
+    const bucket = storage.bucket();
+    const fileName = `user-profiles/${uid}.${extension}`;
+    const file = bucket.file(fileName);
+
+    // Upload file
+    await file.save(imageBuffer, {
+      metadata: {
+        contentType,
+        metadata: {
+          firebaseStorageDownloadTokens: uid,
+        },
+      },
+      public: true,
+    });
+
+    // Make file publicly accessible
+    await file.makePublic();
+
+    // Get public URL
+    const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+
+    console.log(`✓ Image uploaded: ${publicUrl}`);
+    return publicUrl;
+  } catch (error) {
+    console.error("❌ Error uploading image:", error);
+    throw new Error("Failed to upload image");
+  }
+}
+
+/**
+ * Delete user image from Firebase Storage
+ */
+async function deleteUserImage(uid: string): Promise<void> {
+  try {
+    const bucket = storage.bucket();
+    const extensions = ["jpg", "jpeg", "png", "gif"];
+
+    for (const ext of extensions) {
+      const fileName = `user-profiles/${uid}.${ext}`;
+      const file = bucket.file(fileName);
+
+      try {
+        await file.delete();
+        console.log(`✓ Deleted image: ${fileName}`);
+      } catch (error) {
+        // File doesn't exist, continue
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error deleting image:", error);
+  }
 }
 
 /**
@@ -83,6 +166,7 @@ async function saveUserToFirestore(
   role: "student" | "staff" | "admin",
   course: string,
   contactNumber: string,
+  imageUrl: string,
 ): Promise<void> {
   try {
     const userData = {
@@ -93,7 +177,7 @@ async function saveUserToFirestore(
       course,
       contactNumber,
       status: "active",
-      imageUrl: "",
+      imageUrl,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     };
@@ -133,10 +217,15 @@ async function setUserClaims(
  */
 app.post("/createUser", async (req, res) => {
   console.log("=== Create New User ===");
-  console.log("Request body:", req.body);
+  console.log("Request body:", {
+    ...req.body,
+    imageBase64: req.body.imageBase64 ? "[IMAGE DATA]" : undefined,
+  });
+
+  let createdUid: string | null = null;
 
   try {
-    const { email, password, name, role, course, contactNumber } =
+    const { email, password, name, role, course, contactNumber, imageBase64 } =
       req.body as CreateUserRequest;
 
     // Validation
@@ -214,9 +303,30 @@ app.post("/createUser", async (req, res) => {
     // Create user
     console.log("Creating auth user...");
     const uid = await createAuthUser(email, password, name);
+    createdUid = uid;
+
+    // Upload image if provided
+    let imageUrl = "";
+    if (imageBase64) {
+      console.log("Uploading user image...");
+      try {
+        imageUrl = await uploadUserImage(imageBase64, uid);
+      } catch (error) {
+        console.error("Failed to upload image, continuing without it");
+        // Continue without image if upload fails
+      }
+    }
 
     console.log("Saving to Firestore...");
-    await saveUserToFirestore(uid, email, name, role, course, contactNumber);
+    await saveUserToFirestore(
+      uid,
+      email,
+      name,
+      role,
+      course,
+      contactNumber,
+      imageUrl,
+    );
 
     console.log("Setting custom claims...");
     await setUserClaims(uid, role);
@@ -232,6 +342,7 @@ app.post("/createUser", async (req, res) => {
         role,
         course,
         contactNumber,
+        imageUrl,
         status: "active",
         createdAt: new Date().toISOString(),
       },
@@ -243,6 +354,17 @@ app.post("/createUser", async (req, res) => {
       code: (error as any)?.code,
       stack: error instanceof Error ? error.stack : undefined,
     });
+
+    // Rollback: Delete created auth user if exists
+    if (createdUid) {
+      try {
+        await auth.deleteUser(createdUid);
+        await deleteUserImage(createdUid);
+        console.log("✓ Rolled back auth user and image");
+      } catch (rollbackError) {
+        console.error("Failed to rollback:", rollbackError);
+      }
+    }
 
     // Handle specific Firebase errors
     if (error instanceof Error) {
@@ -300,6 +422,18 @@ app.post("/createBulkUsers", async (req, res) => {
     for (const user of users) {
       try {
         const uid = await createAuthUser(user.email, user.password, user.name);
+
+        let imageUrl = "";
+        if (user.imageBase64) {
+          try {
+            imageUrl = await uploadUserImage(user.imageBase64, uid);
+          } catch (error) {
+            console.error(
+              `Failed to upload image for ${user.email}, continuing without it`,
+            );
+          }
+        }
+
         await saveUserToFirestore(
           uid,
           user.email,
@@ -307,6 +441,7 @@ app.post("/createBulkUsers", async (req, res) => {
           user.role,
           user.course,
           user.contactNumber,
+          imageUrl,
         );
         await setUserClaims(uid, user.role);
 
@@ -382,11 +517,26 @@ app.get("/getUser/:uid", async (req, res) => {
 app.patch("/updateUser/:uid", async (req, res) => {
   try {
     const { uid } = req.params;
-    const updates = req.body;
+    const { imageBase64, ...updates } = req.body;
 
     // Don't allow updating uid or createdAt
     delete updates.uid;
     delete updates.createdAt;
+
+    // Upload new image if provided
+    if (imageBase64) {
+      console.log("Uploading new user image...");
+      try {
+        // Delete old image first
+        await deleteUserImage(uid);
+        // Upload new image
+        const imageUrl = await uploadUserImage(imageBase64, uid);
+        updates.imageUrl = imageUrl;
+      } catch (error) {
+        console.error("Failed to update image");
+        throw new Error("Failed to update image");
+      }
+    }
 
     updates.updatedAt = FieldValue.serverTimestamp();
 
@@ -409,7 +559,7 @@ app.patch("/updateUser/:uid", async (req, res) => {
 
 /**
  * DELETE /deleteUser/:uid
- * Delete user (Auth + Firestore)
+ * Delete user (Auth + Firestore + Storage)
  */
 app.delete("/deleteUser/:uid", async (req, res) => {
   try {
@@ -417,6 +567,9 @@ app.delete("/deleteUser/:uid", async (req, res) => {
 
     // Delete from Auth
     await auth.deleteUser(uid);
+
+    // Delete image from Storage
+    await deleteUserImage(uid);
 
     // Delete from Firestore
     await db.collection("users").doc(uid).delete();

@@ -10,7 +10,14 @@ import {
 } from "react-native";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/firebase/firebaseConfig";
-import { X, Plus, Minus, Trash2, MoveRight } from "lucide-react-native";
+import {
+  X,
+  Plus,
+  Minus,
+  Trash2,
+  MoveRight,
+  ShoppingCart,
+} from "lucide-react-native";
 import { Box } from "@/components/ui/box";
 import { HStack } from "@/components/ui/hstack";
 import { VStack } from "@/components/ui/vstack";
@@ -29,6 +36,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input, InputField } from "@/components/ui/input";
 import DateTimePicker from "@/components/DateTimePicker";
 import { createTransaction } from "@/_helpers/firebaseHelpers";
+import { Image } from "@/components/ui/image";
 
 interface User {
   uid: string;
@@ -46,6 +54,7 @@ interface Equipment {
   pricePerUnit: number;
   condition: string;
   status: string;
+  imageUrl: string;
 }
 
 interface CartItem {
@@ -236,11 +245,7 @@ export default function AddTransactionModal({
           pricePerUnit: item.pricePerQuantity,
         })),
         true, // isAdminCreated - this will set status to "Ongoing"
-      );
-
-      Alert.alert(
-        "Success",
-        "Transaction created successfully with status 'Ongoing'",
+        dueDate,
       );
       resetModal();
       onSuccess();
@@ -280,7 +285,7 @@ export default function AddTransactionModal({
   return (
     <Modal isOpen={visible} onClose={handleClose} size="lg">
       <ModalBackdrop />
-      <ModalContent style={styles.modalContent}>
+      <ModalContent className={step == 2 ? "max-w-6xl h-[90vh]" : ""}>
         <ModalHeader>
           <Heading size="lg">New Transaction</Heading>
           <ModalCloseButton>
@@ -318,8 +323,11 @@ export default function AddTransactionModal({
           </Box>
         </HStack>
 
-        <ModalBody>
-          <ScrollView>
+        <ModalBody
+          style={{ maxHeight: 400 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <ScrollView showsVerticalScrollIndicator={false}>
             {/* Step 1: Select Student */}
             {step === 1 && (
               <VStack space="md">
@@ -351,84 +359,116 @@ export default function AddTransactionModal({
 
             {/* Step 2: Browse Equipment */}
             {step === 2 && (
-              <VStack space="md">
-                <Input>
-                  <InputField
-                    placeholder="Search equipment..."
-                    value={equipmentSearch}
-                    onChangeText={setEquipmentSearch}
-                  />
-                </Input>
-
-                <VStack space="sm">
-                  {filteredEquipment.map((eq) => (
-                    <EquipmentCard
-                      key={eq.id}
-                      equipment={eq}
-                      onAdd={addToCart}
+              <HStack space="md" style={{ flex: 1, maxHeight: "100%" }}>
+                {/* Left side: Search + Scrollable Equipment List */}
+                <VStack
+                  space="md"
+                  style={{ flex: 1, maxHeight: 350, minHeight: 350 }}
+                >
+                  {/* Fixed Search Bar */}
+                  <Input>
+                    <InputField
+                      placeholder="Search equipment..."
+                      value={equipmentSearch}
+                      onChangeText={setEquipmentSearch}
                     />
-                  ))}
+                  </Input>
+
+                  {/* Scrollable Equipment List ONLY */}
+                  <ScrollView
+                    style={{ flex: 1 }}
+                    showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled={true}
+                  >
+                    <VStack space="sm" style={{ paddingBottom: 16 }}>
+                      {filteredEquipment.map((eq) => (
+                        <EquipmentCard
+                          key={eq.id}
+                          equipment={eq}
+                          onAdd={addToCart}
+                        />
+                      ))}
+                    </VStack>
+                  </ScrollView>
                 </VStack>
 
-                {cart.length > 0 && (
-                  <Box style={styles.cartContainer}>
-                    <Text style={styles.cartTitle}>
-                      Cart ({cart.length} items)
-                    </Text>
-                    {cart.map((item) => (
-                      <HStack key={item.id} style={styles.cartItem}>
-                        <VStack style={styles.cartItemInfo}>
-                          <Text style={styles.cartItemName}>
-                            {item.itemName}
-                          </Text>
-                          <Text style={styles.cartItemPrice}>
-                            ₱{item.pricePerQuantity} × {item.quantity} = ₱
-                            {(item.pricePerQuantity * item.quantity).toFixed(2)}
-                          </Text>
-                        </VStack>
-                        <HStack style={styles.cartItemActions}>
-                          <TouchableOpacity
-                            onPress={() => updateCartQuantity(item.id, -1)}
-                          >
-                            <Minus size={20} color="#ef4444" />
-                          </TouchableOpacity>
-                          <Text style={styles.cartItemQuantity}>
-                            {item.quantity}
-                          </Text>
-                          <TouchableOpacity
-                            onPress={() => updateCartQuantity(item.id, 1)}
-                          >
-                            <Plus size={20} color="#10b981" />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => removeFromCart(item.id)}
-                          >
-                            <Trash2 size={20} color="#ef4444" />
-                          </TouchableOpacity>
-                        </HStack>
-                      </HStack>
-                    ))}
-                    <Text style={styles.cartTotalText}>
-                      Total: ₱
-                      {cart
-                        .reduce(
-                          (sum, item) =>
-                            sum + item.pricePerQuantity * item.quantity,
-                          0,
-                        )
-                        .toFixed(2)}
-                    </Text>
-                  </Box>
-                )}
-              </VStack>
+                {/* Right side: Fixed Cart - Always visible */}
+                <Box style={{ ...styles.cartContainer, minWidth: 300 }}>
+                  <Text style={styles.cartTitle}>
+                    Cart ({cart.length} items)
+                  </Text>
+
+                  {cart.length > 0 ? (
+                    <>
+                      <ScrollView
+                        style={{ flex: 1, maxHeight: 400 }}
+                        showsVerticalScrollIndicator={true}
+                      >
+                        {cart.map((item) => (
+                          <HStack key={item.id} style={styles.cartItem}>
+                            <VStack style={styles.cartItemInfo}>
+                              <Text style={styles.cartItemName}>
+                                {item.itemName}
+                              </Text>
+                              <Text style={styles.cartItemPrice}>
+                                ₱{item.pricePerQuantity} × {item.quantity} = ₱
+                                {(
+                                  item.pricePerQuantity * item.quantity
+                                ).toFixed(2)}
+                              </Text>
+                            </VStack>
+                            <HStack style={styles.cartItemActions}>
+                              <TouchableOpacity
+                                onPress={() => updateCartQuantity(item.id, -1)}
+                              >
+                                <Minus size={20} color="#ef4444" />
+                              </TouchableOpacity>
+                              <Text style={styles.cartItemQuantity}>
+                                {item.quantity}
+                              </Text>
+                              <TouchableOpacity
+                                onPress={() => updateCartQuantity(item.id, 1)}
+                              >
+                                <Plus size={20} color="#10b981" />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => removeFromCart(item.id)}
+                              >
+                                <Trash2 size={20} color="#ef4444" />
+                              </TouchableOpacity>
+                            </HStack>
+                          </HStack>
+                        ))}
+                      </ScrollView>
+                      <Text style={styles.cartTotalText}>
+                        Total: ₱
+                        {cart
+                          .reduce(
+                            (sum, item) =>
+                              sum + item.pricePerQuantity * item.quantity,
+                            0,
+                          )
+                          .toFixed(2)}
+                      </Text>
+                    </>
+                  ) : (
+                    <Box
+                      className="p-8 items-center justify-center rounded-lg"
+                      style={{ marginTop: 20 }}
+                    >
+                      <ShoppingCart size={48} color="#999" />
+                      <Text className="text-typography-500 mt-4 text-center">
+                        No items on the cart
+                      </Text>
+                    </Box>
+                  )}
+                </Box>
+              </HStack>
             )}
 
             {/* Step 3: Set Due Date */}
             {step === 3 && (
               <VStack space="md">
-                <Text style={styles.label}>Due Date and Time</Text>
-                <DateTimePicker value={dueDate} onChange={setDueDate} />
-
                 <Box style={styles.summaryContainer}>
                   <Text style={styles.summaryTitle}>Transaction Summary</Text>
                   <Text style={styles.summaryText}>
@@ -452,6 +492,9 @@ export default function AddTransactionModal({
                     Status: <Text style={styles.statusOngoing}>Ongoing</Text>
                   </Text>
                 </Box>
+
+                <Text style={styles.label}>Set Due Date</Text>
+                <DateTimePicker value={dueDate} onChange={setDueDate} />
               </VStack>
             )}
           </ScrollView>
@@ -468,19 +511,22 @@ export default function AddTransactionModal({
                 <ButtonText>Back</ButtonText>
               </Button>
             )}
-            {step < 3 ? (
+            {step === 2 && (
               <Button
-                onPress={() => (step === 1 ? setStep(2) : setStep(3))}
-                disabled={step === 2 && cart.length === 0}
+                onPress={() => setStep(3)}
+                disabled={cart.length === 0}
                 style={{ flex: 1 }}
+                action="positive"
               >
                 <ButtonText>Next</ButtonText>
               </Button>
-            ) : (
+            )}
+            {step === 3 && (
               <Button
                 onPress={handleSubmit}
                 disabled={loading || !dueDate}
                 style={{ flex: 1 }}
+                action="positive"
               >
                 {loading ? (
                   <ActivityIndicator color="#fff" />
@@ -508,50 +554,67 @@ function EquipmentCard({
 
   return (
     <Box style={styles.equipmentCard}>
-      <VStack style={styles.equipmentInfo}>
-        <Text style={styles.equipmentName}>{equipment.name}</Text>
-        <Text style={styles.equipmentDescription}>{equipment.description}</Text>
-        <Text style={styles.equipmentAvailable}>
-          Available: {equipment.availableQuantity}/{equipment.totalQuantity}
-        </Text>
-        <Text style={styles.equipmentPrice}>
-          ₱{equipment.pricePerUnit.toFixed(2)} per unit
-        </Text>
-      </VStack>
-      <HStack style={styles.equipmentActions}>
-        <HStack style={styles.quantityContainer}>
-          <TouchableOpacity
-            onPress={() => setQuantity(Math.max(1, quantity - 1))}
-          >
-            <Minus size={20} color="#374151" />
-          </TouchableOpacity>
-          <Text style={styles.quantityText}>{quantity}</Text>
-          <TouchableOpacity
-            onPress={() =>
-              setQuantity(Math.min(equipment.availableQuantity, quantity + 1))
-            }
-          >
-            <Plus size={20} color="#374151" />
-          </TouchableOpacity>
+      <HStack style={{ justifyContent: "space-between" }}>
+        <HStack>
+          <Image
+            source={{
+              uri:
+                equipment.imageUrl ||
+                "https://imgs.search.brave.com/Phs4SaVGkpkAX3vKTiKToN0MPPFYHPPYJJsgZZ4BvNQ/rs:fit:860:0:0:0/g:ce/aHR0cHM6Ly9zdGF0/aWMudmVjdGVlenku/Y29tL3N5c3RlbS9y/ZXNvdXJjZXMvdGh1/bWJuYWlscy8wMDUv/NzIwLzQwOC9zbWFs/bC9jcm9zc2VkLWlt/YWdlLWljb24tcGlj/dHVyZS1ub3QtYXZh/aWxhYmxlLWRlbGV0/ZS1waWN0dXJlLXN5/bWJvbC1mcmVlLXZl/Y3Rvci5qcGc",
+            }}
+            className=" h-[100px] w-[100px] rounded-md aspect-[263/240]"
+            alt={equipment.name}
+          />
+          <VStack style={styles.equipmentInfo}>
+            <Text style={styles.equipmentName}>{equipment.name}</Text>
+            <Text style={styles.equipmentDescription}>
+              {equipment.description}
+            </Text>
+            <Text style={styles.equipmentAvailable}>
+              Available: {equipment.availableQuantity}/{equipment.totalQuantity}
+            </Text>
+            <Text style={styles.equipmentPrice}>
+              ₱{equipment.pricePerUnit.toFixed(2)} per unit
+            </Text>
+          </VStack>
         </HStack>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => {
-            onAdd(equipment, quantity);
-            setQuantity(1);
-          }}
-        >
-          <Text style={styles.addButtonText}>Add</Text>
-        </TouchableOpacity>
+
+        <HStack style={styles.equipmentActions}>
+          <HStack style={{ alignItems: "center" }} space="sm">
+            <HStack style={styles.quantityContainer}>
+              <TouchableOpacity
+                onPress={() => setQuantity(Math.max(1, quantity - 1))}
+              >
+                <Minus size={20} color="#374151" />
+              </TouchableOpacity>
+              <Text style={styles.quantityText}>{quantity}</Text>
+              <TouchableOpacity
+                onPress={() =>
+                  setQuantity(
+                    Math.min(equipment.availableQuantity, quantity + 1),
+                  )
+                }
+              >
+                <Plus size={20} color="#374151" />
+              </TouchableOpacity>
+            </HStack>
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => {
+                onAdd(equipment, quantity);
+                setQuantity(1);
+              }}
+            >
+              <Text style={styles.addButtonText}>Add</Text>
+            </TouchableOpacity>
+          </HStack>
+        </HStack>
       </HStack>
     </Box>
   );
 }
 
 const styles = StyleSheet.create({
-  modalContent: {
-    maxHeight: "90%",
-  },
   progressContainer: {
     padding: 16,
     backgroundColor: "#f9fafb",
@@ -627,8 +690,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   equipmentActions: {
-    justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-end",
+    borderWidth: 0,
   },
   quantityContainer: {
     alignItems: "center",
@@ -655,6 +718,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
     marginTop: 16,
+    flex: 1,
   },
   cartTitle: {
     fontSize: 16,
@@ -703,7 +767,6 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: "600",
-    marginBottom: 8,
   },
   summaryContainer: {
     backgroundColor: "#f9fafb",

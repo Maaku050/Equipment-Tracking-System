@@ -38,7 +38,7 @@ export default function AdminDashboard() {
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Automatically check for overdue transactions every 30 minutes
-  const { checkOverdue } = useOverdueChecker(30, true);
+  const { checkOverdue } = useOverdueChecker(1, true);
 
   const filterButtons: (TransactionStatus | "All")[] = [
     "All",
@@ -231,12 +231,12 @@ const styles = StyleSheet.create({
   statNumberOngoing: {
     fontSize: 28,
     fontWeight: "bold",
-    color: "#70f63b",
+    color: "#10b981",
   },
   statNumberIncomplete: {
     fontSize: 28,
     fontWeight: "bold",
-    color: "#f6e33b",
+    color: "#f97316",
   },
   statNumberOverdue: {
     fontSize: 28,

@@ -12,6 +12,7 @@ export default function RootLayout() {
           options={{ title: "Login", headerShown: false }}
         />
         <Stack.Screen name="admin" options={{ headerShown: false }} />
+        <Stack.Screen name="user" options={{ headerShown: false }} />
       </Stack>
     </GluestackUIProvider>
   );

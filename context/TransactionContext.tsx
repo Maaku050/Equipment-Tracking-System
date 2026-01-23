@@ -26,6 +26,7 @@ export interface TransactionItem {
 
 export interface Transaction {
   id: string;
+  transactionId: string;
   studentId: string;
   studentName: string;
   studentEmail: string;
@@ -118,11 +119,6 @@ export const TransactionProvider = ({
       if (t.status === "Complete" || t.status === "Complete and Overdue") {
         newStats.complete++;
       }
-
-      // Count all overdue statuses
-      if (t.status.includes("Overdue")) {
-        newStats.overdue++;
-      }
     });
 
     return newStats;
@@ -140,6 +136,7 @@ export const TransactionProvider = ({
 
           return {
             id: doc.id,
+            transactionId: data.transactionId,
             studentId: data.studentId || "",
             studentName: data.studentName || "Unknown",
             studentEmail: data.studentEmail || "",

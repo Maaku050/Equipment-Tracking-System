@@ -41,6 +41,7 @@ export type TransactionStatus =
   | "Complete and Overdue";
 
 export interface Transaction {
+  transactionId: string;
   studentId: string;
   studentName: string;
   studentEmail: string;
@@ -123,7 +124,33 @@ export const determineTransactionStatus = (
 };
 
 /**
- * Updates all transaction statuses based on current date
+ * Calculate the total fine amount based on days overdue
+ * @param dueDate - The original due date
+ * @param currentDate - The current date (defaults to now)
+ * @param finePerDay - Fine amount per day (defaults to 10)
+ * @returns Total fine amount
+ */
+export const calculateOverdueFine = (
+  dueDate: Date,
+  currentDate: Date = new Date(),
+  finePerDay: number = 10,
+): number => {
+  // If not overdue, no fine
+  if (currentDate < dueDate) {
+    return 0;
+  }
+
+  // Calculate days overdue (rounded up to include partial days)
+  const millisecondsPerDay = 1000 * 60 * 60 * 24;
+  const diffInMilliseconds = currentDate.getTime() - dueDate.getTime();
+  const daysOverdue = Math.ceil(diffInMilliseconds / millisecondsPerDay);
+
+  // Calculate total fine
+  return daysOverdue * finePerDay;
+};
+
+/**
+ * Updates all transaction statuses and fines based on current date
  * This should be called periodically or on app load
  */
 export const updateOverdueTransactions = async () => {
@@ -146,13 +173,102 @@ export const updateOverdueTransactions = async () => {
         transaction.status,
       );
 
-      // Only update if status has changed
-      if (correctStatus !== transaction.status) {
+      // Calculate the correct fine amount based on days overdue
+      const correctFineAmount = calculateOverdueFine(dueDate, now, 10);
+
+      // Check if we need to update status or fine amount
+      const needsStatusUpdate = correctStatus !== transaction.status;
+      const needsFineUpdate =
+        correctFineAmount !== (transaction.fineAmount || 0);
+
+      // Only update if something has changed
+      if (needsStatusUpdate || needsFineUpdate) {
         const transactionRef = doc(db, "transactions", docSnap.id);
-        batch.update(transactionRef, {
-          status: correctStatus,
+        const updates: any = {
           updatedAt: Timestamp.now(),
-        });
+        };
+
+        if (needsStatusUpdate) {
+          updates.status = correctStatus;
+        }
+
+        if (needsFineUpdate) {
+          updates.fineAmount = correctFineAmount;
+        }
+
+        batch.update(transactionRef, updates);
+        updatedCount++;
+      }
+    }
+
+    if (updatedCount > 0) {
+      await batch.commit();
+      console.log(`Updated ${updatedCount} overdue transactions`);
+    }
+
+    return updatedCount;
+  } catch (error) {
+    console.error("Error updating overdue transactions:", error);
+    throw error;
+  }
+};
+
+/**
+ * Optional: Query only potentially overdue transactions for better performance
+ * Use this if you have a large number of transactions
+ */
+export const updateOverdueTransactionsOptimized = async () => {
+  try {
+    const transactionsRef = collection(db, "transactions");
+
+    // Query only transactions that are not completed and might be overdue
+    const q = query(
+      transactionsRef,
+      where("status", "in", [
+        "Ongoing",
+        "Incomplete",
+        "Overdue",
+        "Incomplete and Overdue",
+      ]),
+    );
+
+    const snapshot = await getDocs(q);
+    const batch = writeBatch(db);
+    let updatedCount = 0;
+
+    const now = new Date();
+
+    for (const docSnap of snapshot.docs) {
+      const transaction = docSnap.data() as Transaction;
+      const dueDate = transaction.dueDate.toDate();
+
+      const correctStatus = determineTransactionStatus(
+        transaction.items,
+        dueDate,
+        transaction.status,
+      );
+
+      const correctFineAmount = calculateOverdueFine(dueDate, now, 10);
+
+      const needsStatusUpdate = correctStatus !== transaction.status;
+      const needsFineUpdate =
+        correctFineAmount !== (transaction.fineAmount || 0);
+
+      if (needsStatusUpdate || needsFineUpdate) {
+        const transactionRef = doc(db, "transactions", docSnap.id);
+        const updates: any = {
+          updatedAt: Timestamp.now(),
+        };
+
+        if (needsStatusUpdate) {
+          updates.status = correctStatus;
+        }
+
+        if (needsFineUpdate) {
+          updates.fineAmount = correctFineAmount;
+        }
+
+        batch.update(transactionRef, updates);
         updatedCount++;
       }
     }
@@ -278,9 +394,16 @@ export const createTransaction = async (
     pricePerUnit: number;
   }[],
   isAdminCreated: boolean = false,
+  dueDate: Date,
 ) => {
   try {
     const batch = writeBatch(db);
+
+    // Generate unique transaction ID
+    const now = new Date();
+    const dateStr = now.toISOString().split("T")[0].replace(/-/g, ""); // YYYYMMDD
+    const timeStr = now.getTime().toString().slice(-6); // Last 6 digits of timestamp
+    const transactionId = `TXN-${dateStr}-${timeStr}`;
 
     const items: BorrowedItem[] = selectedEquipment.map((equipment, index) => ({
       id: `item-${Date.now()}-${index}`,
@@ -300,10 +423,11 @@ export const createTransaction = async (
       0,
     );
 
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 7);
+    // const dueDate = new Date();
+    // dueDate.setDate(dueDate.getDate() + 7);
 
     const transactionData: Transaction = {
+      transactionId, // Add the generated transaction ID
       studentId,
       studentName,
       studentEmail,
@@ -338,7 +462,7 @@ export const createTransaction = async (
     }
 
     await batch.commit();
-    return transactionRef.id;
+    return { id: transactionRef.id, transactionId };
   } catch (error) {
     console.error("Error creating transaction:", error);
     throw error;
@@ -453,25 +577,35 @@ export const completeTransaction = async (
       fineAmount = daysOverdue * 10; // ₱10 per day overdue
     }
 
-    // Determine new status using helper function
-    const newStatus = determineTransactionStatus(
-      updatedItems,
-      dueDate,
-      transactionData.status,
-    );
+    // Determine final status based on completion and overdue state
+    let finalStatus: string;
 
     if (allReturned) {
-      // Move to records collection
+      // All items returned
+      finalStatus = isOverdue ? "Complete and Overdue" : "Complete";
+    } else {
+      // Some items not returned
+      finalStatus = isOverdue ? "Incomplete and Overdue" : "Incomplete";
+    }
+
+    if (allReturned) {
+      // Move to records collection - transaction is complete
       const recordData = {
-        ...transactionData,
+        transactionId: transactionData.transactionId || transactionId,
+        studentId: transactionData.studentId,
+        studentName: transactionData.studentName,
+        studentEmail: transactionData.studentEmail,
         items: updatedItems,
-        status: newStatus,
-        finalStatus: newStatus,
-        fineAmount,
+        borrowedDate: transactionData.borrowedDate,
+        dueDate: transactionData.dueDate,
         returnedDate: Timestamp.now(),
         completedDate: Timestamp.now(),
-        archivedAt: Timestamp.now(),
+        finalStatus: finalStatus,
+        totalPrice: transactionData.totalPrice,
+        fineAmount,
         notes: "",
+        createdAt: transactionData.createdAt || Timestamp.now(),
+        archivedAt: Timestamp.now(),
       };
 
       await addDoc(collection(db, "records"), recordData);
@@ -480,9 +614,10 @@ export const completeTransaction = async (
       // Create fine document if overdue
       if (isOverdue && fineAmount > 0) {
         const fineData = {
-          transactionId,
+          transactionId: transactionData.transactionId || transactionId,
           studentId: transactionData.studentId,
           studentName: transactionData.studentName,
+          studentEmail: transactionData.studentEmail,
           fineType: "late_return",
           amount: fineAmount,
           reason: `${Math.ceil((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))} days overdue`,
@@ -496,10 +631,19 @@ export const completeTransaction = async (
         await addDoc(collection(db, "fines"), fineData);
       }
     } else {
-      // Update transaction with incomplete status
+      // Partial return - update transaction with new status
+      // Determine current transaction status
+      let transactionStatus: string;
+
+      if (isOverdue) {
+        transactionStatus = "Incomplete and Overdue";
+      } else {
+        transactionStatus = "Incomplete";
+      }
+
       batch.update(transactionRef, {
         items: updatedItems,
-        status: newStatus,
+        status: transactionStatus,
         fineAmount,
         updatedAt: Timestamp.now(),
       });
@@ -529,7 +673,7 @@ export const completeTransaction = async (
     }
 
     await batch.commit();
-    return newStatus;
+    return finalStatus;
   } catch (error) {
     console.error("Error completing transaction:", error);
     throw error;

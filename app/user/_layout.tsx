@@ -88,8 +88,8 @@ export default function RootLayout() {
                   drawerType: isLargeScreen
                     ? "permanent"
                     : isMediumScreen
-                      ? "slide"
-                      : "slide",
+                      ? "front"
+                      : "front",
                   drawerStyle: isLargeScreen
                     ? {
                         width: 200,
@@ -101,7 +101,6 @@ export default function RootLayout() {
                         backgroundColor: theme.background,
                       },
                   headerShown: true,
-                  headerLeft: () => null,
                   drawerActiveTintColor: theme.drawerActive,
                   drawerInactiveTintColor: theme.drawerInactive,
                   drawerActiveBackgroundColor: theme.drawerActiveBg,
@@ -142,98 +141,11 @@ export default function RootLayout() {
                         className="mr-2"
                       />
                     ),
-                    headerTitle: () => (
-                      <Heading size="md" style={{ color: "white" }}>
-                        Dashboard
-                      </Heading>
-                    ),
+                    headerTitle: () => null,
                     headerStyle: {
                       ...styles.headerSpace,
                       backgroundColor: theme.headerBg,
                     },
-                    headerLeft: () => (
-                      <>
-                        <LayoutDashboard
-                          color={"white"}
-                          style={{ marginLeft: 10 }}
-                        />
-                      </>
-                    ),
-                  }}
-                />
-                <Drawer.Screen
-                  name="reports"
-                  options={{
-                    title: "Report",
-                    drawerIcon: ({ color }) => (
-                      <NotepadText color={color} size={25} className="mr-2" />
-                    ),
-                    headerTitle: () => (
-                      <Heading size="md" style={{ color: "white" }}>
-                        Report
-                      </Heading>
-                    ),
-                    headerStyle: {
-                      ...styles.headerSpace,
-                      backgroundColor: theme.headerBg,
-                    },
-                    headerLeft: () => (
-                      <>
-                        <NotepadText
-                          color={"white"}
-                          style={{ marginLeft: 10 }}
-                        />
-                      </>
-                    ),
-                  }}
-                />
-                <Drawer.Screen
-                  name="inventory"
-                  options={{
-                    title: "Inventory",
-                    drawerIcon: ({ color }) => (
-                      <Boxes color={color} size={25} className="mr-2" />
-                    ),
-                    headerTitle: () => (
-                      <Heading size="md" style={{ color: "white" }}>
-                        Inventory
-                      </Heading>
-                    ),
-                    headerStyle: {
-                      ...styles.headerSpace,
-                      backgroundColor: theme.headerBg,
-                    },
-                    headerLeft: () => (
-                      <>
-                        <Boxes color={"white"} style={{ marginLeft: 10 }} />
-                      </>
-                    ),
-                  }}
-                />
-                <Drawer.Screen
-                  name="users"
-                  options={{
-                    title: "Borrowers",
-                    drawerIcon: ({ color }) => (
-                      <UsersRound color={color} size={25} className="mr-2" />
-                    ),
-                    headerTitle: () => (
-                      <Heading size="md" style={{ color: "white" }}>
-                        Borrowers
-                      </Heading>
-                    ),
-                    headerStyle: {
-                      ...styles.headerSpace,
-                      backgroundColor: theme.headerBg,
-                    },
-                    headerLeft: () => (
-                      <>
-                        <UsersRound
-                          color={"white"}
-                          style={{ marginLeft: 10 }}
-                        />
-                      </>
-                    ),
                   }}
                 />
               </Drawer>
