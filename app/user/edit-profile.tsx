@@ -139,12 +139,7 @@ export default function EditProfileScreen() {
         updatedAt: new Date(),
       });
 
-      Alert.alert("Success", "Profile updated successfully", [
-        {
-          text: "OK",
-          onPress: () => router.back(),
-        },
-      ]);
+      router.back();
     } catch (error) {
       console.error("Error updating profile:", error);
       Alert.alert("Error", "Failed to update profile");
@@ -166,12 +161,15 @@ export default function EditProfileScreen() {
       {/* Header */}
       <Box style={styles.header}>
         <HStack style={styles.headerContent}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{ flexDirection: "row", alignItems: "center" }}
+          >
             <ArrowLeft size={24} color="#1f2937" />
+            <Heading size="lg" style={{ marginLeft: 10 }}>
+              Edit Profile
+            </Heading>
           </TouchableOpacity>
-          <Heading size="lg" style={{ flex: 1, marginLeft: 16 }}>
-            Edit Profile
-          </Heading>
         </HStack>
       </Box>
 
@@ -321,9 +319,9 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: "#ffffff",
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingTop: 10,
+    paddingLeft: 5,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
   },

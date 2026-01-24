@@ -1,0 +1,14 @@
+# Build output
+lib/
+generated/
+
+# Dependencies
+node_modules/
+
+# Config files
+.eslintrc.js
+*.config.js
+
+# Test files
+**/*.spec.ts
+**/*.test.ts

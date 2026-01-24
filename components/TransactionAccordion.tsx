@@ -45,7 +45,14 @@ import {
   deleteTransaction,
   denyTransaction,
 } from "@/_helpers/firebaseHelpers";
-import { Check, ChevronDownIcon, ChevronUpIcon } from "lucide-react-native";
+import {
+  Check,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  Clock,
+  AlertCircle,
+  CheckCircle,
+} from "lucide-react-native";
 
 interface Transaction {
   id: string;
@@ -55,8 +62,13 @@ interface Transaction {
   dueDate: Date;
   borrowedDate: Date;
   items: BorrowedItem[];
-  status: string;
+  status?: string; // For active transactions
+  finalStatus?: string; // For completed records
   totalPrice: number;
+  fineAmount?: number; // For records
+  completedDate?: Date; // For records
+  returnedDate?: Date; // For records
+  notes?: string; // For records
 }
 
 interface TransactionAccordionProps {
@@ -65,10 +77,11 @@ interface TransactionAccordionProps {
     transactionId: string,
     itemReturnStates: { [key: string]: { checked: boolean; quantity: number } },
   ) => Promise<void>;
-  onDelete: (transactionId: string) => Promise<void>;
+  onDelete?: (transactionId: string) => Promise<void>;
   onApprove?: (transactionId: string) => Promise<void>;
   onDeny?: (transactionId: string) => Promise<void>;
   loading?: boolean;
+  isUserView?: boolean; // New prop to distinguish user view from admin view
 }
 
 export default function TransactionAccordion({
@@ -78,6 +91,7 @@ export default function TransactionAccordion({
   onApprove,
   onDeny,
   loading = false,
+  isUserView = false, // Default to admin view
 }: TransactionAccordionProps) {
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
@@ -129,8 +143,6 @@ export default function TransactionAccordion({
       ...prev,
       [itemId]: {
         checked,
-        // When checking, set quantity to full amount (complete return)
-        // When unchecking, reset to 0
         quantity: checked ? item.quantity : 0,
       },
     }));
@@ -146,7 +158,6 @@ export default function TransactionAccordion({
     setItemReturnStates((prev) => ({
       ...prev,
       [itemId]: {
-        // Automatically check if quantity > 0, uncheck if 0
         checked: numQuantity > 0,
         quantity: numQuantity,
       },
@@ -156,7 +167,6 @@ export default function TransactionAccordion({
   const handleCompleteTransaction = async () => {
     if (!selectedTransaction || !onComplete) return;
 
-    // Validate that checked items have quantity > 0
     const invalidItems = Object.entries(itemReturnStates).filter(
       ([itemId, state]) => state.checked && state.quantity === 0,
     );
@@ -169,7 +179,6 @@ export default function TransactionAccordion({
       return;
     }
 
-    // Validate quantities don't exceed borrowed amounts
     const exceedingItems = selectedTransaction.items.filter((item) => {
       const state = itemReturnStates[item.id];
       return state && state.quantity > item.quantity;
@@ -188,76 +197,36 @@ export default function TransactionAccordion({
     setSelectedTransaction(null);
   };
 
-  const handleApprove = async (transactionId: string) => {
-    if (!onApprove) return;
-
-    Alert.alert(
-      "Approve Transaction",
-      "Are you sure you want to approve this borrow request?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Approve",
-          onPress: async () => {
-            await onApprove(transactionId);
-          },
-        },
-      ],
-    );
-  };
-
-  const handleDeny = async (transactionId: string) => {
-    if (!onDeny) return;
-
-    Alert.alert(
-      "Deny Transaction",
-      "Are you sure you want to deny this request? This will release the reserved equipment.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Deny",
-          style: "destructive",
-          onPress: async () => {
-            await onDeny(transactionId);
-          },
-        },
-      ],
-    );
-  };
-
-  const handleDelete = async (transactionId: string) => {
-    Alert.alert(
-      "Delete Transaction",
-      "Are you sure you want to delete this transaction?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            await onDelete(transactionId);
-          },
-        },
-      ],
-    );
-  };
-
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Request":
-        return "#f59e0b"; // amber
+        return "#f59e0b";
       case "Ongoing":
-        return "#3b82f6"; // blue
+        return "#3b82f6";
       case "Overdue":
-      case "Incomplete and Overdue":
-      case "Complete and Overdue":
-        return "#ef4444"; // red
+        return "#ef4444";
       case "Incomplete":
-        return "#f97316"; // orange
+        return "#f97316";
+      case "Incomplete and Overdue":
+        return "#dc2626";
       case "Complete":
-        return "#10b981"; // green
+      case "Complete and Overdue":
+        return "#10b981";
       default:
-        return "#6b7280"; // gray
+        return "#6b7280";
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "Request":
+        return Clock;
+      case "Ongoing":
+        return AlertCircle;
+      case "Complete":
+        return CheckCircle;
+      default:
+        return AlertCircle;
     }
   };
 
@@ -283,8 +252,16 @@ export default function TransactionAccordion({
 
   if (transactions.length === 0) {
     return (
-      <Box style={styles.centerContainer}>
-        <Text style={styles.emptyText}>No transactions found</Text>
+      <Box style={styles.emptyContainer}>
+        <Box style={styles.emptyIconContainer}>
+          <AlertCircle size={48} color="#d1d5db" />
+        </Box>
+        <Text style={styles.emptyTitle}>No Transactions Found</Text>
+        <Text style={styles.emptySubtitle}>
+          {isUserView
+            ? "You haven't borrowed any equipment yet. Start by creating a new transaction!"
+            : "No transactions to display at the moment."}
+        </Text>
       </Box>
     );
   }
@@ -299,135 +276,265 @@ export default function TransactionAccordion({
         isDisabled={false}
         style={{ backgroundColor: "transparent" }}
       >
-        {transactions.map((transaction) => (
-          <AccordionItem key={transaction.id} value={transaction.id}>
-            <AccordionHeader>
-              <AccordionTrigger style={styles.accordionTrigger}>
-                {({ isExpanded }: any) => {
-                  return (
-                    <>
-                      <AccordionTitleText>
-                        <HStack style={styles.accordionHeaderContent}>
-                          <VStack style={styles.headerLeft}>
-                            <HStack style={{ alignItems: "center", gap: 8 }}>
-                              <Text style={styles.studentName}>
-                                {transaction.studentName}
-                              </Text>
-                              <Box
+        {transactions.map((transaction) => {
+          // Determine if this is a record or active transaction
+          const isRecord = !!transaction.finalStatus;
+          const displayStatus = isRecord
+            ? transaction.finalStatus
+            : transaction.status;
+          const StatusIcon = getStatusIcon(displayStatus || "");
+
+          return (
+            <AccordionItem key={transaction.id} value={transaction.id}>
+              <AccordionHeader>
+                <AccordionTrigger style={styles.accordionTrigger}>
+                  {({ isExpanded }: any) => {
+                    return (
+                      <>
+                        <AccordionTitleText>
+                          <HStack style={styles.accordionHeaderContent}>
+                            <VStack style={styles.headerLeft}>
+                              <HStack
                                 style={{
-                                  ...styles.statusBadge,
-                                  backgroundColor: getStatusColor(
-                                    transaction.status,
-                                  ),
+                                  alignItems: "center",
+                                  gap: 8,
+                                  marginBottom: 4,
                                 }}
                               >
-                                <Text style={styles.statusText}>
-                                  {transaction.status}
+                                {!isUserView && (
+                                  <Text style={styles.studentName}>
+                                    {transaction.studentName}
+                                  </Text>
+                                )}
+                                <Box
+                                  style={{
+                                    ...styles.statusBadge,
+                                    backgroundColor:
+                                      transaction.fineAmount &&
+                                      transaction.fineAmount > 0
+                                        ? "#ef4444" // Red if there's a fine
+                                        : getStatusColor(displayStatus || ""), // Otherwise use the normal status color
+                                  }}
+                                >
+                                  <HStack
+                                    style={{ alignItems: "center", gap: 4 }}
+                                  >
+                                    <StatusIcon size={12} color="#ffffff" />
+                                    <Text style={styles.statusText}>
+                                      {displayStatus}
+                                    </Text>
+                                  </HStack>
+                                </Box>
+                              </HStack>
+                              {!isUserView && (
+                                <Text style={styles.studentEmail}>
+                                  {transaction.studentEmail}
                                 </Text>
-                              </Box>
-                            </HStack>
-                            <Text style={styles.studentEmail}>
-                              {transaction.studentEmail}
-                            </Text>
-                            <Text style={styles.transactionId}>
-                              {transaction.transactionId}
-                            </Text>
-                          </VStack>
-                          <VStack style={{ alignItems: "flex-end" }}>
-                            <Text style={styles.dueDate}>
-                              Due: {formatDate(transaction.dueDate)}
-                            </Text>
-                            {transaction.status === "Request" && (
-                              <Text style={styles.requestedDate}>
-                                Requested:{" "}
+                              )}
+                              <Text style={styles.transactionId}>
+                                ID: {transaction.transactionId}
+                              </Text>
+                              <Text style={styles.borrowedDate}>
+                                Borrowed:{" "}
                                 {formatDateTime(transaction.borrowedDate)}
                               </Text>
-                            )}
-                          </VStack>
+                              {isRecord && transaction.completedDate && (
+                                <Text style={styles.completedDate}>
+                                  Completed:{" "}
+                                  {formatDateTime(transaction.completedDate)}
+                                </Text>
+                              )}
+                            </VStack>
+                            <VStack style={{ alignItems: "flex-end" }}>
+                              <Text style={styles.dueDate}>
+                                Due: {formatDate(transaction.dueDate)}
+                              </Text>
+                              {!isRecord && displayStatus === "Request" && (
+                                <Text style={styles.requestedDate}>
+                                  Requested:{" "}
+                                  {formatDateTime(transaction.borrowedDate)}
+                                </Text>
+                              )}
+                              <Text style={styles.itemCount}>
+                                {transaction.items.length}{" "}
+                                {transaction.items.length === 1
+                                  ? "item"
+                                  : "items"}
+                              </Text>
+                            </VStack>
+                          </HStack>
+                        </AccordionTitleText>
+                        {isExpanded ? (
+                          <AccordionIcon as={ChevronUpIcon} className="ml-3" />
+                        ) : (
+                          <AccordionIcon
+                            as={ChevronDownIcon}
+                            className="ml-3"
+                          />
+                        )}
+                      </>
+                    );
+                  }}
+                </AccordionTrigger>
+              </AccordionHeader>
+              <AccordionContent style={styles.accordionContent}>
+                <VStack style={styles.contentVStack}>
+                  {/* Items List */}
+                  <Text style={styles.sectionTitle}>Equipment Items</Text>
+                  {transaction.items.map((item, index) => (
+                    <HStack key={item.id} style={styles.itemRow}>
+                      <VStack style={styles.itemLeft}>
+                        <HStack style={{ alignItems: "center", gap: 8 }}>
+                          <Text style={styles.itemNumber}>{index + 1}.</Text>
+                          <Text style={styles.itemName}>{item.itemName}</Text>
                         </HStack>
-                      </AccordionTitleText>
-                      {isExpanded ? (
-                        <AccordionIcon as={ChevronUpIcon} className="ml-3" />
-                      ) : (
-                        <AccordionIcon as={ChevronDownIcon} className="ml-3" />
-                      )}
-                    </>
-                  );
-                }}
-              </AccordionTrigger>
-            </AccordionHeader>
-            <AccordionContent style={styles.accordionContent}>
-              <VStack style={styles.contentVStack}>
-                {/* Items List */}
-                {transaction.items.map((item) => (
-                  <HStack key={item.id} style={styles.itemRow}>
-                    <VStack style={styles.itemLeft}>
-                      <Text style={styles.itemName}>{item.itemName}</Text>
-                      <Text style={styles.itemDetails}>
-                        Qty: {item.quantity} | ₱{item.pricePerQuantity} each
-                      </Text>
-                      {item.returnedQuantity > 0 && (
-                        <Text style={styles.returnedInfo}>
-                          Returned: {item.returnedQuantity}/{item.quantity}
+                        <Text style={styles.itemDetails}>
+                          Quantity: {item.quantity} × ₱{item.pricePerQuantity} =
+                          ₱{(item.pricePerQuantity * item.quantity).toFixed(2)}
                         </Text>
-                      )}
-                    </VStack>
-                    <Text style={styles.itemPrice}>
-                      ₱{(item.pricePerQuantity * item.quantity).toFixed(2)}
+                        {item.returnedQuantity > 0 && (
+                          <HStack
+                            style={{
+                              alignItems: "center",
+                              gap: 4,
+                              marginTop: 4,
+                            }}
+                          >
+                            <CheckCircle size={14} color="#10b981" />
+                            <Text style={styles.returnedInfo}>
+                              Returned: {item.returnedQuantity}/{item.quantity}
+                            </Text>
+                          </HStack>
+                        )}
+                      </VStack>
+                    </HStack>
+                  ))}
+
+                  {/* Total */}
+                  <HStack style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>Total Amount:</Text>
+                    <Text style={styles.totalPrice}>
+                      ₱{transaction.totalPrice.toFixed(2)}
                     </Text>
                   </HStack>
-                ))}
 
-                {/* Total */}
-                <HStack style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Total:</Text>
-                  <Text style={styles.totalPrice}>
-                    ₱{transaction.totalPrice.toFixed(2)}
-                  </Text>
-                </HStack>
-
-                {/* Action Buttons */}
-                {transaction.status === "Request" ? (
-                  <HStack style={styles.actionButtons}>
-                    <Button
-                      style={styles.denyButton}
-                      onPress={() => denyTransaction(transaction.id)}
-                    >
-                      <ButtonText>Deny</ButtonText>
-                    </Button>
-                    <Button
-                      style={styles.approveButton}
-                      onPress={() => approveTransaction(transaction.id)}
-                    >
-                      <ButtonText>Approve</ButtonText>
-                    </Button>
-                  </HStack>
-                ) : (
-                  <HStack style={styles.actionButtons}>
-                    <Button
-                      style={styles.deleteButton}
-                      onPress={() => deleteTransaction(transaction.id)}
-                    >
-                      <ButtonText>Delete</ButtonText>
-                    </Button>
-                    {onComplete && (
-                      <Button
-                        style={styles.completeButton}
-                        onPress={() => openCompleteModal(transaction)}
-                      >
-                        <ButtonText>Complete</ButtonText>
-                      </Button>
+                  {/* Fine Amount (for records) */}
+                  {isRecord &&
+                    transaction.fineAmount &&
+                    transaction.fineAmount > 0 && (
+                      <HStack style={styles.fineRow}>
+                        <Text style={styles.fineLabel}>Fine Amount:</Text>
+                        <Text style={styles.finePrice}>
+                          ₱{transaction.fineAmount.toFixed(2)}
+                        </Text>
+                      </HStack>
                     )}
-                  </HStack>
-                )}
-              </VStack>
-            </AccordionContent>
-          </AccordionItem>
-        ))}
+
+                  {/* Notes (for records) */}
+                  {isRecord && transaction.notes && (
+                    <Box style={styles.notesBox}>
+                      <Text style={styles.notesLabel}>Notes:</Text>
+                      <Text style={styles.notesText}>{transaction.notes}</Text>
+                    </Box>
+                  )}
+
+                  {/* User View - Information Only */}
+                  {isUserView && (
+                    <Box style={styles.infoBox}>
+                      {displayStatus === "Request" && (
+                        <Text style={styles.infoText}>
+                          ⏳ Your request is pending approval from the staff.
+                          You'll be notified once it's processed.
+                        </Text>
+                      )}
+                      {displayStatus === "Ongoing" && (
+                        <Text style={styles.infoText}>
+                          📦 Please return the equipment by{" "}
+                          {formatDate(transaction.dueDate)} to avoid penalties.
+                        </Text>
+                      )}
+                      {displayStatus === "Overdue" && (
+                        <Text style={[styles.infoText, { color: "#ef4444" }]}>
+                          ⚠️ This transaction is overdue. Please return the
+                          equipment as soon as possible.
+                        </Text>
+                      )}
+                      {displayStatus === "Incomplete" && (
+                        <Text style={[styles.infoText, { color: "#f97316" }]}>
+                          ⚠️ Some items are still pending return. Please return
+                          all equipment.
+                        </Text>
+                      )}
+                      {displayStatus === "Incomplete and Overdue" && (
+                        <Text style={[styles.infoText, { color: "#dc2626" }]}>
+                          ⚠️ This transaction is overdue and incomplete. Please
+                          return the remaining equipment immediately.
+                        </Text>
+                      )}
+                      {displayStatus === "Complete" && (
+                        <Text style={[styles.infoText, { color: "#10b981" }]}>
+                          ✅ Transaction completed successfully. Thank you for
+                          returning on time!
+                        </Text>
+                      )}
+                      {displayStatus === "Complete and Overdue" && (
+                        <Text style={[styles.infoText, { color: "#f59e0b" }]}>
+                          ✅ Transaction completed. Note: Items were returned
+                          late.
+                        </Text>
+                      )}
+                    </Box>
+                  )}
+
+                  {/* Admin Action Buttons - Only shown in admin view for active transactions */}
+                  {!isUserView && !isRecord && (
+                    <>
+                      {displayStatus === "Request" ? (
+                        <HStack style={styles.actionButtons}>
+                          <Button
+                            style={styles.denyButton}
+                            onPress={() => denyTransaction(transaction.id)}
+                          >
+                            <ButtonText>Deny</ButtonText>
+                          </Button>
+                          <Button
+                            style={styles.approveButton}
+                            onPress={() => approveTransaction(transaction.id)}
+                          >
+                            <ButtonText>Approve</ButtonText>
+                          </Button>
+                        </HStack>
+                      ) : (
+                        <HStack style={styles.actionButtons}>
+                          {onDelete && (
+                            <Button
+                              style={styles.deleteButton}
+                              onPress={() => deleteTransaction(transaction.id)}
+                            >
+                              <ButtonText>Delete</ButtonText>
+                            </Button>
+                          )}
+                          {onComplete && (
+                            <Button
+                              style={styles.completeButton}
+                              onPress={() => openCompleteModal(transaction)}
+                            >
+                              <ButtonText>Complete</ButtonText>
+                            </Button>
+                          )}
+                        </HStack>
+                      )}
+                    </>
+                  )}
+                </VStack>
+              </AccordionContent>
+            </AccordionItem>
+          );
+        })}
       </Accordion>
 
-      {/* Complete Transaction Modal - Now using Gluestack UI */}
-      {onComplete && (
+      {/* Complete Transaction Modal - Admin Only */}
+      {!isUserView && onComplete && (
         <Modal
           isOpen={showCompleteModal}
           onClose={() => setShowCompleteModal(false)}
@@ -530,9 +637,31 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 16,
   },
-  emptyText: {
+  emptyContainer: {
+    padding: 40,
+    alignItems: "center",
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#f3f4f6",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
     color: "#6b7280",
-    fontSize: 16,
+    textAlign: "center",
+    lineHeight: 20,
+    paddingHorizontal: 20,
   },
   accordion: {
     gap: 12,
@@ -541,15 +670,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderWidth: 1,
     borderColor: "#e5e7eb",
+    borderRadius: 8,
+    marginBottom: 8,
   },
   accordionHeaderContent: {
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     flex: 1,
   },
   headerLeft: {
     flex: 1,
-    gap: 0,
+    gap: 4,
   },
   studentName: {
     fontSize: 16,
@@ -559,18 +690,27 @@ const styles = StyleSheet.create({
   studentEmail: {
     fontSize: 13,
     color: "#6b7280",
-    marginBottom: 4,
   },
   transactionId: {
     fontSize: 12,
     color: "#9ca3af",
     fontFamily: "monospace",
   },
+  borrowedDate: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 2,
+  },
+  completedDate: {
+    fontSize: 12,
+    color: "#10b981",
+    marginTop: 2,
+    fontWeight: "500",
+  },
   statusBadge: {
-    padding: 2,
+    borderRadius: 12,
     paddingLeft: 5,
     paddingRight: 5,
-    borderRadius: 12,
   },
   statusText: {
     fontSize: 11,
@@ -579,55 +719,72 @@ const styles = StyleSheet.create({
   },
   dueDate: {
     fontSize: 14,
-    color: "#6b7280",
-    fontWeight: "500",
+    color: "#374151",
+    fontWeight: "600",
   },
   requestedDate: {
     fontSize: 11,
     color: "#9ca3af",
     marginTop: 2,
   },
+  itemCount: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 4,
+    fontWeight: "500",
+  },
   accordionContent: {
     backgroundColor: "#f9fafb",
     borderWidth: 1,
     borderTopWidth: 0,
     borderColor: "#e5e7eb",
+    borderRadius: 8,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    marginTop: -8,
+    marginBottom: 8,
   },
   contentVStack: {
-    gap: 12,
+    gap: 16,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: -4,
   },
   itemRow: {
-    justifyContent: "space-between",
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
   },
   itemLeft: {
     flex: 1,
-    gap: 4,
+    gap: 6,
+  },
+  itemNumber: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#9ca3af",
   },
   itemName: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#374151",
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1f2937",
   },
   itemDetails: {
-    fontSize: 12,
+    fontSize: 13,
     color: "#6b7280",
+    marginLeft: 24,
   },
   returnedInfo: {
     fontSize: 12,
     color: "#10b981",
-    fontWeight: "500",
-  },
-  itemPrice: {
-    fontSize: 14,
     fontWeight: "600",
-    color: "#1f2937",
   },
   totalRow: {
     justifyContent: "space-between",
-    paddingTop: 12,
+    paddingTop: 16,
     marginTop: 8,
     borderTopWidth: 2,
     borderTopColor: "#1f2937",
@@ -638,13 +795,59 @@ const styles = StyleSheet.create({
     color: "#1f2937",
   },
   totalPrice: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "700",
-    color: "#3b82f6",
+    color: "#2563eb",
+  },
+  fineRow: {
+    justifyContent: "space-between",
+    paddingTop: 8,
+  },
+  fineLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1f2937",
+  },
+  finePrice: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#ef4444",
+  },
+  notesBox: {
+    backgroundColor: "#fffbeb",
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: "#f59e0b",
+    marginTop: 8,
+  },
+  notesLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#92400e",
+    marginBottom: 4,
+  },
+  notesText: {
+    fontSize: 13,
+    color: "#78350f",
+    fontStyle: "italic",
+    lineHeight: 18,
+  },
+  infoBox: {
+    backgroundColor: "#eff6ff",
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: "#3b82f6",
+  },
+  infoText: {
+    fontSize: 13,
+    color: "#1e40af",
+    lineHeight: 18,
   },
   actionButtons: {
     gap: 12,
-    marginTop: 12,
+    marginTop: 4,
   },
   deleteButton: {
     flex: 1,

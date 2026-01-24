@@ -1,6 +1,13 @@
 // admin/_layout.tsx
 import React from "react";
-import { StyleSheet, View, Image, Text } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Image,
+  Text,
+  Alert,
+  TouchableOpacity,
+} from "react-native";
 import { useWindowDimensions } from "react-native";
 import { GluestackUIProvider } from "@/components/ui/gluestack-ui-provider";
 import { Drawer } from "expo-router/drawer";
@@ -13,6 +20,7 @@ import "@/global.css";
 import {
   Boxes,
   LayoutDashboard,
+  LogOut,
   NotepadText,
   Package,
   UsersRound,
@@ -22,6 +30,20 @@ import { TransactionProvider } from "@/context/TransactionContext";
 import { EquipmentProvider } from "@/context/EquipmentContext";
 import { RecordsProvider } from "@/context/RecordsContext";
 import { UsersProvider } from "@/context/UsersContext";
+import { signOut } from "firebase/auth";
+import { auth } from "@/firebase/firebaseConfig";
+import { useRouter } from "expo-router";
+import { useState } from "react";
+import {
+  Modal,
+  ModalBackdrop,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+} from "@/components/ui/modal";
+import { Button, ButtonText } from "@/components/ui/button";
+import { HStack } from "@/components/ui/hstack";
 
 // Custom Drawer Content
 function CustomDrawerContent(props: any) {
@@ -62,6 +84,8 @@ export default function RootLayout() {
   const isLargeScreen = dimensions.width >= 1280;
   const isMediumScreen = dimensions.width <= 1280 && dimensions.width > 768;
 
+  const router = useRouter();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   // Define theme colors matching the provided design
   const theme = {
     background: "#ecf0f5", // Light gray background
@@ -74,12 +98,58 @@ export default function RootLayout() {
     borderColor: "#2d3541",
   };
 
+  const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = async () => {
+    try {
+      await signOut(auth);
+      setShowLogoutModal(false);
+      router.replace("/");
+    } catch (error) {
+      console.error("Logout error:", error);
+      Alert.alert("Error", "Failed to logout");
+    }
+  };
+
   return (
     <TransactionProvider>
       <EquipmentProvider>
         <RecordsProvider>
           <UsersProvider>
             <GluestackUIProvider mode="light">
+              <Modal
+                isOpen={showLogoutModal}
+                onClose={() => setShowLogoutModal(false)}
+              >
+                <ModalBackdrop />
+                <ModalContent>
+                  <ModalHeader>
+                    <Heading size="md">Confirm Logout</Heading>
+                  </ModalHeader>
+
+                  <ModalBody>
+                    <Text style={{ color: "#374151", fontSize: 14 }}>
+                      Are you sure you want to log out of your account?
+                    </Text>
+                  </ModalBody>
+
+                  <ModalFooter style={{ gap: 12 }}>
+                    <Button
+                      variant="outline"
+                      action="secondary"
+                      onPress={() => setShowLogoutModal(false)}
+                    >
+                      <ButtonText>Cancel</ButtonText>
+                    </Button>
+
+                    <Button action="negative" onPress={confirmLogout}>
+                      <ButtonText>Logout</ButtonText>
+                    </Button>
+                  </ModalFooter>
+                </ModalContent>
+              </Modal>
               <Drawer
                 drawerContent={(props: any) => (
                   <CustomDrawerContent {...props} />
@@ -141,11 +211,141 @@ export default function RootLayout() {
                         className="mr-2"
                       />
                     ),
-                    headerTitle: () => null,
+                    headerTitle: () => (
+                      <>
+                        <HStack style={{ alignItems: "center" }}>
+                          <LayoutDashboard
+                            color={"white"}
+                            size={25}
+                            className="mr-1"
+                          />
+                          <Heading style={{ color: "white" }}>
+                            Dashboard
+                          </Heading>
+                        </HStack>
+                      </>
+                    ),
                     headerStyle: {
                       ...styles.headerSpace,
                       backgroundColor: theme.headerBg,
                     },
+                    headerRight: () => (
+                      <TouchableOpacity
+                        style={styles.logoutButton}
+                        onPress={handleLogout}
+                      >
+                        <LogOut size={16} color="#ef4444" />
+                      </TouchableOpacity>
+                    ),
+                  }}
+                />
+                <Drawer.Screen
+                  name="inventory"
+                  options={{
+                    title: "Inventory",
+                    drawerIcon: ({ color }) => (
+                      <Boxes color={color} size={25} className="mr-2" />
+                    ),
+                    headerTitle: () => (
+                      <>
+                        <HStack style={{ alignItems: "center" }}>
+                          <Boxes color={"white"} size={25} className="mr-1" />
+                          <Heading style={{ color: "white" }}>
+                            Inventory
+                          </Heading>
+                        </HStack>
+                      </>
+                    ),
+                    headerStyle: {
+                      ...styles.headerSpace,
+                      backgroundColor: theme.headerBg,
+                    },
+                    headerRight: () => (
+                      <TouchableOpacity
+                        style={styles.logoutButton}
+                        onPress={handleLogout}
+                      >
+                        <LogOut size={16} color="#ef4444" />
+                      </TouchableOpacity>
+                    ),
+                  }}
+                />
+                <Drawer.Screen
+                  name="create-transaction"
+                  options={{
+                    drawerItemStyle: { display: "none" },
+                    drawerIcon: ({ color }) => (
+                      <LayoutDashboard
+                        color={color}
+                        size={25}
+                        className="mr-2"
+                      />
+                    ),
+                    headerTitle: () => (
+                      <>
+                        <HStack style={{ alignItems: "center" }}>
+                          <LayoutDashboard
+                            color={"white"}
+                            size={25}
+                            className="mr-1"
+                          />
+                          <Heading style={{ color: "white" }}>
+                            Dashboard
+                          </Heading>
+                        </HStack>
+                      </>
+                    ),
+                    headerStyle: {
+                      ...styles.headerSpace,
+                      backgroundColor: theme.headerBg,
+                    },
+                    headerRight: () => (
+                      <TouchableOpacity
+                        style={styles.logoutButton}
+                        onPress={handleLogout}
+                      >
+                        <LogOut size={16} color="#ef4444" />
+                      </TouchableOpacity>
+                    ),
+                  }}
+                />
+                <Drawer.Screen
+                  name="edit-profile"
+                  options={{
+                    drawerItemStyle: { display: "none" },
+                    drawerIcon: ({ color }) => (
+                      <LayoutDashboard
+                        color={color}
+                        size={25}
+                        className="mr-2"
+                      />
+                    ),
+                    headerTitle: () => (
+                      <>
+                        <HStack style={{ alignItems: "center" }}>
+                          <LayoutDashboard
+                            color={"white"}
+                            size={25}
+                            className="mr-1"
+                          />
+                          <Heading style={{ color: "white" }}>
+                            Dashboard
+                          </Heading>
+                        </HStack>
+                      </>
+                    ),
+                    headerStyle: {
+                      ...styles.headerSpace,
+                      backgroundColor: theme.headerBg,
+                    },
+                    headerRight: () => (
+                      <TouchableOpacity
+                        style={styles.logoutButton}
+                        onPress={handleLogout}
+                      >
+                        <LogOut size={16} color="#ef4444" />
+                      </TouchableOpacity>
+                    ),
                   }}
                 />
               </Drawer>
@@ -164,5 +364,15 @@ const styles = StyleSheet.create({
     alignContent: "center",
     alignItems: "center",
     height: 50,
+  },
+  logoutButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#ffffff",
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "center",
+    marginRight: 10,
   },
 });

@@ -38,7 +38,8 @@ export type TransactionStatus =
   | "Incomplete"
   | "Incomplete and Overdue"
   | "Complete"
-  | "Complete and Overdue";
+  | "Complete and Overdue"
+  | "All";
 
 export interface Transaction {
   transactionId: string;

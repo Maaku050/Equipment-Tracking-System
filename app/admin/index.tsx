@@ -123,6 +123,14 @@ export default function AdminDashboard() {
     console.log("✅ Transaction created successfully");
   };
 
+  if (error) {
+    return (
+      <Box style={styles.centerContainer}>
+        <Text style={styles.errorText}>{error}</Text>
+      </Box>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} showsHorizontalScrollIndicator={false}>
       {/* Stats Cards */}
@@ -275,5 +283,15 @@ const styles = StyleSheet.create({
   },
   transactionsContainer: {
     padding: 16,
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  errorText: {
+    color: "#ef4444",
+    fontSize: 16,
   },
 });

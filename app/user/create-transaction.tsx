@@ -28,6 +28,8 @@ import { useUsers } from "@/context/UsersContext";
 import { Image } from "@/components/ui/image";
 import DateTimePicker from "@/components/DateTimePicker";
 import { createTransaction } from "@/_helpers/firebaseHelpers";
+import { useFocusEffect } from "expo-router";
+import { useCallback } from "react";
 
 interface Equipment {
   id: string;
@@ -62,6 +64,13 @@ export default function CreateTransactionScreen() {
   const [loading, setLoading] = useState(false);
   const [loadingEquipment, setLoadingEquipment] = useState(false);
 
+  const resetScreenState = useCallback(() => {
+    setCart([]);
+    setEquipmentSearch("");
+    setDueDate(null);
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
     loadEquipment();
   }, []);
@@ -88,6 +97,17 @@ export default function CreateTransactionScreen() {
       setLoadingEquipment(false);
     }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      resetScreenState();
+      loadEquipment(); // optional but recommended to refresh availability
+
+      return () => {
+        // no cleanup needed
+      };
+    }, [resetScreenState]),
+  );
 
   const addToCart = (eq: Equipment, quantity: number) => {
     const existingItem = cart.find((item) => item.equipmentId === eq.id);
@@ -199,16 +219,7 @@ export default function CreateTransactionScreen() {
         dueDate,
       );
 
-      Alert.alert(
-        "Success",
-        "Transaction request submitted successfully! Waiting for admin approval.",
-        [
-          {
-            text: "OK",
-            onPress: () => router.back(),
-          },
-        ],
-      );
+      router.back();
     } catch (error) {
       console.error("Error creating transaction:", error);
       Alert.alert("Error", "Failed to create transaction");
@@ -236,16 +247,22 @@ export default function CreateTransactionScreen() {
       {/* Header */}
       <Box style={styles.header}>
         <HStack style={styles.headerContent}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{ flexDirection: "row", alignItems: "center" }}
+          >
             <ArrowLeft size={24} color="#ffffff" />
+            <Heading size="lg" style={{ marginLeft: 10, color: "white" }}>
+              Create Transaction
+            </Heading>
           </TouchableOpacity>
-          <Heading size="lg" style={styles.headerTitle}>
-            Create Transaction
-          </Heading>
         </HStack>
       </Box>
 
-      <ScrollView style={styles.scrollView}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+      >
         <VStack style={styles.content}>
           {/* Student Info Card */}
           <Box style={styles.infoCard}>
@@ -281,11 +298,16 @@ export default function CreateTransactionScreen() {
                 <Text style={styles.loadingText}>Loading equipment...</Text>
               </Box>
             ) : (
-              <VStack style={{ gap: 12 }}>
+              <ScrollView
+                style={styles.equipmentList}
+                contentContainerStyle={styles.equipmentListContent}
+                showsVerticalScrollIndicator
+                nestedScrollEnabled
+              >
                 {filteredEquipment.map((eq) => (
                   <EquipmentCard key={eq.id} equipment={eq} onAdd={addToCart} />
                 ))}
-              </VStack>
+              </ScrollView>
             )}
           </Box>
 
@@ -441,6 +463,15 @@ function EquipmentCard({
 }
 
 const styles = StyleSheet.create({
+  equipmentList: {
+    maxHeight: 630, // ≈ 3 cards
+    borderRadius: 12,
+  },
+
+  equipmentListContent: {
+    gap: 12,
+    paddingRight: 4, // avoids scrollbar overlap on web
+  },
   container: {
     flex: 1,
     backgroundColor: "#f3f4f6",
@@ -453,13 +484,13 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: "#2563eb",
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingTop: 10,
+    paddingLeft: 5,
+    paddingBottom: 10,
   },
   headerContent: {
     alignItems: "center",
-    gap: 16,
+    gap: 8,
   },
   headerTitle: {
     color: "#ffffff",

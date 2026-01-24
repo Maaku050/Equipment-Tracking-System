@@ -1,8 +1,9 @@
+// admin/inventory.tsx
 import { Box } from "@/components/ui/box";
 import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
 import { Plus } from "lucide-react-native";
 import React, { useState } from "react";
-import { Text, ScrollView, Pressable } from "react-native";
+import { Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { Grid, GridItem } from "@/components/ui/grid";
 import { Card } from "@/components/ui/card";
 import { Image } from "@/components/ui/image";
@@ -15,7 +16,7 @@ import { useEquipment, Equipment } from "@/context/EquipmentContext";
 import { Fab, FabIcon, FabLabel } from "@/components/ui/fab";
 
 export default function EquipmentInterface() {
-  const { equipment, loading } = useEquipment();
+  const { equipment, loading, error } = useEquipment();
   const [showAddEquipmentModal, setShowAddEquipmentModal] = useState(false);
   const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(
     null,
@@ -52,6 +53,14 @@ export default function EquipmentInterface() {
         return "info";
     }
   };
+
+  if (error) {
+    return (
+      <Box style={styles.centerContainer}>
+        <Text style={styles.errorText}>{error}</Text>
+      </Box>
+    );
+  }
 
   return (
     <>
@@ -177,3 +186,16 @@ export default function EquipmentInterface() {
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  centerContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  errorText: {
+    color: "#ef4444",
+    fontSize: 16,
+  },
+});
