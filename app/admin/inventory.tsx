@@ -14,6 +14,7 @@ import AddEquipmentModal from "@/_modals/addEquipmentModal";
 import EquipmentDetailsModal from "@/_modals/equipmentDetailsModal";
 import { useEquipment, Equipment } from "@/context/EquipmentContext";
 import { Fab, FabIcon, FabLabel } from "@/components/ui/fab";
+import AdminGuard from "@/components/AdminGuard";
 
 export default function EquipmentInterface() {
   const { equipment, loading, error } = useEquipment();
@@ -63,24 +64,11 @@ export default function EquipmentInterface() {
   }
 
   return (
-    <>
+    <AdminGuard>
       <ScrollView
         style={{ padding: 15 }}
         showsHorizontalScrollIndicator={false}
       >
-        {/* <Box
-        style={{
-          alignItems: "flex-end",
-          borderWidth: 0,
-          borderColor: "red",
-        }}
-      >
-        <Button size="sm" onPress={() => setShowAddEquipmentModal(true)}>
-          <ButtonIcon as={Plus} />
-          <ButtonText>Add Equipment</ButtonText>
-        </Button>
-      </Box> */}
-
         {loading ? (
           <Box style={{ padding: 20, alignItems: "center" }}>
             <Spinner />
@@ -183,7 +171,7 @@ export default function EquipmentInterface() {
         <FabIcon as={Plus} />
         <FabLabel>Add Equipment</FabLabel>
       </Fab>
-    </>
+    </AdminGuard>
   );
 }
 

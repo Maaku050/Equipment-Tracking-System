@@ -6,6 +6,8 @@ import {
   ScrollView,
   Text,
   Alert,
+  ActivityIndicator,
+  View,
 } from "react-native";
 import { Box } from "@/components/ui/box";
 import { Button, ButtonText } from "@/components/ui/button";
@@ -96,6 +98,8 @@ export default function TransactionAccordion({
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [returnAll, setReturnAll] = useState(false);
   const [itemReturnStates, setItemReturnStates] = useState<{
     [key: string]: { checked: boolean; quantity: number };
   }>({});
@@ -123,12 +127,21 @@ export default function TransactionAccordion({
     const initialStates: {
       [key: string]: { checked: boolean; quantity: number };
     } = {};
+
+    // Check if all items are already returned to set initial returnAll state
+    let allReturned = true;
     transaction.items.forEach((item) => {
+      const isFullyReturned = item.returnedQuantity === item.quantity;
       initialStates[item.id] = {
-        checked: item.returned,
+        checked: item.returned || isFullyReturned,
         quantity: item.returnedQuantity || 0,
       };
+      if (!isFullyReturned) {
+        allReturned = false;
+      }
     });
+
+    setReturnAll(allReturned);
     setItemReturnStates(initialStates);
     setShowCompleteModal(true);
   };
@@ -164,6 +177,38 @@ export default function TransactionAccordion({
     }));
   };
 
+  const handleReturnAllToggle = (checked: boolean) => {
+    if (!selectedTransaction) return;
+
+    setReturnAll(checked);
+
+    if (checked) {
+      // Mark all items as returned with full quantity
+      const newStates: {
+        [key: string]: { checked: boolean; quantity: number };
+      } = {};
+      selectedTransaction.items.forEach((item) => {
+        newStates[item.id] = {
+          checked: true,
+          quantity: item.quantity,
+        };
+      });
+      setItemReturnStates(newStates);
+    } else {
+      // Reset to previous state (keeping previously returned items)
+      const resetStates: {
+        [key: string]: { checked: boolean; quantity: number };
+      } = {};
+      selectedTransaction.items.forEach((item) => {
+        resetStates[item.id] = {
+          checked: item.returned || item.returnedQuantity > 0,
+          quantity: item.returnedQuantity || 0,
+        };
+      });
+      setItemReturnStates(resetStates);
+    }
+  };
+
   const handleCompleteTransaction = async () => {
     if (!selectedTransaction || !onComplete) return;
 
@@ -192,9 +237,16 @@ export default function TransactionAccordion({
       return;
     }
 
-    await completeTransaction(selectedTransaction.id, itemReturnStates);
-    setShowCompleteModal(false);
-    setSelectedTransaction(null);
+    try {
+      setIsSubmitting(true);
+      await completeTransaction(selectedTransaction.id, itemReturnStates);
+      setShowCompleteModal(false);
+      setSelectedTransaction(null);
+    } catch (error) {
+      Alert.alert("Error", "Failed to complete transaction. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -537,7 +589,7 @@ export default function TransactionAccordion({
       {!isUserView && onComplete && (
         <Modal
           isOpen={showCompleteModal}
-          onClose={() => setShowCompleteModal(false)}
+          onClose={() => !isSubmitting && setShowCompleteModal(false)}
           size="lg"
         >
           <ModalBackdrop />
@@ -546,78 +598,159 @@ export default function TransactionAccordion({
               <Heading size="lg" style={styles.modalTitle}>
                 Complete Transaction
               </Heading>
-              <ModalCloseButton>
+              <ModalCloseButton disabled={isSubmitting}>
                 <Icon as={CloseIcon} />
               </ModalCloseButton>
             </ModalHeader>
-            <ModalBody>
-              <Text style={styles.modalSubtitle}>
-                Mark returned items for {selectedTransaction?.studentName}
-              </Text>
+            <ModalBody showsVerticalScrollIndicator={false}>
+              <VStack style={styles.modalBodyContainer}>
+                <Text style={styles.modalSubtitle}>
+                  Mark returned items for {selectedTransaction?.studentName}
+                </Text>
 
-              <ScrollView style={styles.modalItemsList}>
-                {selectedTransaction?.items.map((item) => (
-                  <VStack key={item.id} style={styles.modalItem}>
-                    <Checkbox
-                      value={
-                        itemReturnStates[item.id]?.checked ? "checked" : ""
-                      }
-                      isChecked={itemReturnStates[item.id]?.checked || false}
-                      onChange={(checked) => handleItemCheck(item.id, checked)}
-                      style={styles.checkbox}
-                    >
-                      <CheckboxIndicator>
-                        <CheckboxIcon as={Check} />
-                      </CheckboxIndicator>
-                      <CheckboxLabel style={styles.checkboxLabel}>
-                        {item.itemName}
-                      </CheckboxLabel>
-                    </Checkbox>
+                {/* Return All Checkbox - Prominent at the top */}
+                <Box style={styles.returnAllContainer}>
+                  <Checkbox
+                    value={returnAll ? "checked" : ""}
+                    isChecked={returnAll}
+                    onChange={handleReturnAllToggle}
+                    isDisabled={isSubmitting}
+                    size="lg"
+                  >
+                    <CheckboxIndicator>
+                      <CheckboxIcon as={Check} />
+                    </CheckboxIndicator>
+                    <CheckboxLabel style={styles.returnAllLabel}>
+                      Return All Items
+                    </CheckboxLabel>
+                  </Checkbox>
+                  <Text style={styles.returnAllDescription}>
+                    Quickly mark all items as fully returned
+                  </Text>
+                </Box>
 
-                    <HStack style={styles.quantityInput}>
-                      <Text style={styles.quantityLabel}>Returned:</Text>
-                      <Input style={styles.quantityInputField}>
-                        <InputField
-                          value={String(
-                            itemReturnStates[item.id]?.quantity || 0,
+                {/* Divider */}
+                <Box style={styles.divider} />
+
+                {/* Items List */}
+                <Text style={styles.itemsListTitle}>Individual Items</Text>
+                <View>
+                  {selectedTransaction?.items.map((item, index) => {
+                    const state = itemReturnStates[item.id];
+                    const remaining =
+                      item.quantity - (item.returnedQuantity || 0);
+
+                    return (
+                      <Box key={item.id} style={styles.modalItem}>
+                        {/* Item Header */}
+                        <HStack style={styles.itemHeader}>
+                          <Text style={styles.itemIndexNumber}>
+                            {index + 1}
+                          </Text>
+                          <VStack style={styles.itemHeaderContent}>
+                            <Text style={styles.modalItemName}>
+                              {item.itemName}
+                            </Text>
+                            <Text style={styles.itemQuantityInfo}>
+                              Total: {item.quantity} | Already returned:{" "}
+                              {item.returnedQuantity || 0} | Remaining:{" "}
+                              {remaining}
+                            </Text>
+                          </VStack>
+                        </HStack>
+
+                        {/* Return Input Section */}
+                        <Box style={styles.returnInputSection}>
+                          <Checkbox
+                            value={state?.checked ? "checked" : ""}
+                            isChecked={state?.checked || false}
+                            onChange={(checked) =>
+                              handleItemCheck(item.id, checked)
+                            }
+                            style={styles.checkbox}
+                            isDisabled={isSubmitting}
+                          >
+                            <CheckboxIndicator>
+                              <CheckboxIcon as={Check} />
+                            </CheckboxIndicator>
+                            <CheckboxLabel style={styles.checkboxLabel}>
+                              Mark as returned
+                            </CheckboxLabel>
+                          </Checkbox>
+
+                          {state?.checked && (
+                            <HStack style={styles.quantityInputRow}>
+                              <Text style={styles.quantityLabel}>
+                                Quantity returned:
+                              </Text>
+                              <Input style={styles.quantityInputField}>
+                                <InputField
+                                  value={String(state?.quantity || 0)}
+                                  onChangeText={(text) =>
+                                    handleQuantityChange(item.id, text)
+                                  }
+                                  keyboardType="numeric"
+                                  placeholder="0"
+                                  editable={!isSubmitting}
+                                />
+                              </Input>
+                              <Text style={styles.quantityTotal}>
+                                / {item.quantity}
+                              </Text>
+                            </HStack>
                           )}
-                          onChangeText={(text) =>
-                            handleQuantityChange(item.id, text)
-                          }
-                          keyboardType="numeric"
-                          placeholder="0"
-                        />
-                      </Input>
-                      <Text style={styles.quantityTotal}>
-                        / {item.quantity}
-                      </Text>
-                      <Text style={styles.returnStatus}>
-                        {getReturnStatusText(item.id)}
-                      </Text>
-                    </HStack>
 
-                    {item.returnedQuantity > 0 && (
-                      <Text style={styles.previouslyReturned}>
-                        Previously returned: {item.returnedQuantity}
-                      </Text>
-                    )}
-                  </VStack>
-                ))}
-              </ScrollView>
+                          {state?.checked && state?.quantity > 0 && (
+                            <HStack style={styles.statusIndicator}>
+                              {state.quantity === item.quantity ? (
+                                <>
+                                  <CheckCircle size={16} color="#10b981" />
+                                  <Text style={styles.completeReturnText}>
+                                    Complete Return
+                                  </Text>
+                                </>
+                              ) : (
+                                <>
+                                  <AlertCircle size={16} color="#f59e0b" />
+                                  <Text style={styles.partialReturnText}>
+                                    Partial Return ({state.quantity}/
+                                    {item.quantity})
+                                  </Text>
+                                </>
+                              )}
+                            </HStack>
+                          )}
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </View>
+              </VStack>
             </ModalBody>
             <ModalFooter>
               <HStack style={styles.modalActions}>
                 <Button
                   style={styles.modalCancelButton}
                   onPress={() => setShowCompleteModal(false)}
+                  isDisabled={isSubmitting}
                 >
                   <ButtonText>Cancel</ButtonText>
                 </Button>
                 <Button
                   style={styles.modalSubmitButton}
                   onPress={handleCompleteTransaction}
+                  isDisabled={isSubmitting}
                 >
-                  <ButtonText>Submit</ButtonText>
+                  {isSubmitting ? (
+                    <HStack style={styles.loadingContainer}>
+                      <ActivityIndicator size="small" color="#ffffff" />
+                      <ButtonText style={styles.loadingText}>
+                        Submitting...
+                      </ButtonText>
+                    </HStack>
+                  ) : (
+                    <ButtonText>Submit</ButtonText>
+                  )}
                 </Button>
               </HStack>
             </ModalFooter>
@@ -873,39 +1006,100 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#1f2937",
   },
+  modalBodyContainer: {
+    gap: 0,
+  },
   modalSubtitle: {
     fontSize: 14,
     color: "#6b7280",
-    marginBottom: 20,
+    marginBottom: 16,
   },
-  modalItemsList: {
-    maxHeight: 400,
+  returnAllContainer: {
+    backgroundColor: "#f0f9ff",
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "#3b82f6",
+    marginBottom: 16,
+  },
+  returnAllLabel: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1e40af",
+    marginLeft: 12,
+  },
+  returnAllDescription: {
+    fontSize: 12,
+    color: "#3b82f6",
+    marginLeft: 40,
+    marginTop: 4,
+    fontStyle: "italic",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#e5e7eb",
+    marginVertical: 16,
+  },
+  itemsListTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   modalItem: {
-    marginBottom: 20,
+    marginBottom: 16,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
     gap: 12,
   },
+  itemHeader: {
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  itemIndexNumber: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#9ca3af",
+    width: 24,
+  },
+  itemHeaderContent: {
+    flex: 1,
+    gap: 4,
+  },
+  modalItemName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1f2937",
+  },
+  itemQuantityInfo: {
+    fontSize: 12,
+    color: "#6b7280",
+  },
+  returnInputSection: {
+    marginLeft: 36,
+    gap: 12,
+  },
   checkbox: {
-    marginBottom: 8,
-    marginLeft: 5,
+    marginBottom: 0,
   },
   checkboxLabel: {
-    fontSize: 16,
+    fontSize: 14,
     color: "#374151",
     marginLeft: 8,
   },
-  quantityInput: {
+  quantityInputRow: {
     alignItems: "center",
     gap: 8,
-    marginLeft: 32,
+    marginLeft: 8,
     flexWrap: "wrap",
   },
   quantityLabel: {
     fontSize: 14,
     color: "#6b7280",
+    fontWeight: "500",
   },
   quantityInputField: {
     width: 80,
@@ -916,18 +1110,22 @@ const styles = StyleSheet.create({
   quantityTotal: {
     fontSize: 14,
     color: "#6b7280",
-  },
-  returnStatus: {
-    fontSize: 12,
-    color: "#3b82f6",
     fontWeight: "600",
-    fontStyle: "italic",
   },
-  previouslyReturned: {
-    fontSize: 12,
+  statusIndicator: {
+    alignItems: "center",
+    gap: 6,
+    marginLeft: 8,
+  },
+  completeReturnText: {
+    fontSize: 13,
     color: "#10b981",
-    marginLeft: 32,
-    fontStyle: "italic",
+    fontWeight: "600",
+  },
+  partialReturnText: {
+    fontSize: 13,
+    color: "#f59e0b",
+    fontWeight: "600",
   },
   modalActions: {
     gap: 12,
@@ -940,5 +1138,10 @@ const styles = StyleSheet.create({
   modalSubmitButton: {
     flex: 1,
     backgroundColor: "#10b981",
+  },
+  loadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
 });

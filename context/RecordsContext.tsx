@@ -176,7 +176,6 @@ export const RecordsProvider = ({
           };
         });
 
-        console.log("✅ Records loaded:", list.length);
         setRecords(list);
         setStats(calculateStats(list));
         setLoading(false);

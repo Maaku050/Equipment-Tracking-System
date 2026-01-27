@@ -1,3 +1,4 @@
+// context/TransactionContext.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/firebase/firebaseConfig";
@@ -162,7 +163,6 @@ export const TransactionProvider = ({
           };
         });
 
-        console.log("✅ Transactions loaded:", list.length);
         setTransactions(list);
         setStats(calculateStats(list));
         setLoading(false);

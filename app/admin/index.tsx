@@ -6,12 +6,14 @@ import {
   TouchableOpacity,
   Text,
   Alert,
+  View,
 } from "react-native";
 import { signOut } from "firebase/auth";
 import { auth } from "@/firebase/firebaseConfig";
 import { router, useLocalSearchParams } from "expo-router";
 import { Box } from "@/components/ui/box";
 import { HStack } from "@/components/ui/hstack";
+import { Input, InputField } from "@/components/ui/input";
 import TransactionAccordion from "@/components/TransactionAccordion";
 import AddTransactionModal from "@/_modals/addTransactionModal";
 import {
@@ -23,8 +25,8 @@ import {
 } from "@/_helpers/firebaseHelpers";
 import { useTransaction } from "@/context/TransactionContext";
 import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
-import { Plus } from "lucide-react-native";
-import { useOverdueChecker } from "@/hooks/useOverdueChecker";
+import { Plus, Search, X } from "lucide-react-native";
+import AdminGuard from "@/components/AdminGuard";
 
 export default function AdminDashboard() {
   const params = useLocalSearchParams();
@@ -37,8 +39,9 @@ export default function AdminDashboard() {
   const [filteredTransactions, setFilteredTransactions] = useState<any[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // Automatically check for overdue transactions every 30 minutes
-  const { checkOverdue } = useOverdueChecker(1, true);
+  // Search states
+  const [searchTransactionId, setSearchTransactionId] = useState("");
+  const [searchUserName, setSearchUserName] = useState("");
 
   const filterButtons: (TransactionStatus | "All")[] = [
     "All",
@@ -49,22 +52,28 @@ export default function AdminDashboard() {
     "Incomplete and Overdue",
   ];
 
-  const handleOverdueCheck = async () => {
-    await checkOverdue(); // Manually trigger overdue check
-  };
-
+  // Filter transactions whenever status, transactions, or search terms change
   useEffect(() => {
-    handleOverdueCheck();
-  }, []);
+    let filtered = getTransactionsByStatus(statusParam);
 
-  // Filter transactions whenever status or transactions change
-  useEffect(() => {
-    const filtered = getTransactionsByStatus(statusParam);
+    // Apply transaction ID search
+    if (searchTransactionId.trim()) {
+      filtered = filtered.filter((t) =>
+        t.transactionId
+          .toLowerCase()
+          .includes(searchTransactionId.toLowerCase()),
+      );
+    }
+
+    // Apply user name search
+    if (searchUserName.trim()) {
+      filtered = filtered.filter((t) =>
+        t.studentName.toLowerCase().includes(searchUserName.toLowerCase()),
+      );
+    }
+
     setFilteredTransactions(filtered);
-    console.log(
-      `🔍 Filtering by status: ${statusParam}, Count: ${filtered.length}`,
-    );
-  }, [statusParam, transactions]);
+  }, [statusParam, transactions, searchTransactionId, searchUserName]);
 
   // Handle errors
   useEffect(() => {
@@ -86,7 +95,6 @@ export default function AdminDashboard() {
     itemReturnStates: { [key: string]: { checked: boolean; quantity: number } },
   ) => {
     try {
-      console.log("Completing transaction:", transactionId);
       await completeTransaction(transactionId, itemReturnStates);
       Alert.alert("Success", "Transaction completed successfully");
     } catch (error) {
@@ -120,7 +128,6 @@ export default function AdminDashboard() {
 
   const handleTransactionSuccess = () => {
     // Modal will close automatically, context will auto-update via snapshot
-    console.log("✅ Transaction created successfully");
   };
 
   if (error) {
@@ -132,88 +139,180 @@ export default function AdminDashboard() {
   }
 
   return (
-    <ScrollView style={styles.container} showsHorizontalScrollIndicator={false}>
-      {/* Stats Cards */}
-      <HStack space="md" style={styles.statsContainer}>
-        <Box style={styles.statCard}>
-          <Text style={styles.statNumberRequest}>{stats.request}</Text>
-          <Text style={styles.statLabel}>Request</Text>
-        </Box>
-        <Box style={styles.statCard}>
-          <Text style={styles.statNumberOngoing}>{stats.ongoing}</Text>
-          <Text style={styles.statLabel}>Ongoing</Text>
-        </Box>
-        <Box style={styles.statCard}>
-          <Text style={styles.statNumberIncomplete}>{stats.incomplete}</Text>
-          <Text style={styles.statLabel}>Incomplete</Text>
-        </Box>
-        <Box style={styles.statCard}>
-          <Text style={styles.statNumberOverdue}>{stats.overdue}</Text>
-          <Text style={styles.statLabel}>Overdue</Text>
-        </Box>
-      </HStack>
-
-      {/* Filter Buttons */}
+    <AdminGuard>
       <ScrollView
-        horizontal
+        style={styles.container}
         showsHorizontalScrollIndicator={false}
-        style={styles.filterContainer}
       >
-        {filterButtons.map((filter) => (
-          <TouchableOpacity
-            key={filter}
-            style={[
-              styles.filterButton,
-              statusParam === filter && styles.filterButtonActive,
-            ]}
-            onPress={() => handleFilterChange(filter)}
-          >
-            <Text
+        {/* Stats Cards */}
+        <HStack space="md" style={styles.statsContainer}>
+          <Box style={styles.statCard}>
+            <Text style={styles.statNumberRequest}>{stats.request}</Text>
+            <Text style={styles.statLabel}>Request</Text>
+          </Box>
+          <Box style={styles.statCard}>
+            <Text style={styles.statNumberOngoing}>{stats.ongoing}</Text>
+            <Text style={styles.statLabel}>Ongoing</Text>
+          </Box>
+          <Box style={styles.statCard}>
+            <Text style={styles.statNumberIncomplete}>{stats.incomplete}</Text>
+            <Text style={styles.statLabel}>Incomplete</Text>
+          </Box>
+          <Box style={styles.statCard}>
+            <Text style={styles.statNumberOverdue}>{stats.overdue}</Text>
+            <Text style={styles.statLabel}>Overdue</Text>
+          </Box>
+        </HStack>
+
+        {/* Filter Buttons */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterContainer}
+        >
+          {filterButtons.map((filter) => (
+            <TouchableOpacity
+              key={filter}
               style={[
-                styles.filterButtonText,
-                statusParam === filter && styles.filterButtonTextActive,
+                styles.filterButton,
+                statusParam === filter && styles.filterButtonActive,
               ]}
+              onPress={() => handleFilterChange(filter)}
             >
-              {filter}
+              <Text
+                style={[
+                  styles.filterButtonText,
+                  statusParam === filter && styles.filterButtonTextActive,
+                ]}
+              >
+                {filter}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* Search Bars and Add Transaction Button */}
+        <View style={styles.searchAndAddContainer}>
+          {/* Transaction ID Search */}
+          <View style={styles.searchInputContainer}>
+            <Search size={20} color="#6b7280" style={styles.searchIcon} />
+            <Input style={styles.searchInput}>
+              <InputField
+                value={searchTransactionId}
+                onChangeText={setSearchTransactionId}
+                placeholder="Search Transaction ID..."
+                placeholderTextColor="#9ca3af"
+              />
+            </Input>
+            {searchTransactionId !== "" && (
+              <TouchableOpacity
+                onPress={() => setSearchTransactionId("")}
+                style={styles.clearButton}
+              >
+                <X size={18} color="#6b7280" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* User Name Search */}
+          <View style={styles.searchInputContainer}>
+            <Search size={20} color="#6b7280" style={styles.searchIcon} />
+            <Input style={styles.searchInput}>
+              <InputField
+                value={searchUserName}
+                onChangeText={setSearchUserName}
+                placeholder="Search User Name..."
+                placeholderTextColor="#9ca3af"
+              />
+            </Input>
+            {searchUserName !== "" && (
+              <TouchableOpacity
+                onPress={() => setSearchUserName("")}
+                style={styles.clearButton}
+              >
+                <X size={18} color="#6b7280" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Add Transaction Button */}
+          <Button
+            size="sm"
+            onPress={() => setShowAddModal(true)}
+            style={styles.addButton}
+          >
+            <ButtonIcon as={Plus} />
+            <ButtonText>Add Transaction</ButtonText>
+          </Button>
+        </View>
+
+        {/* Transactions List */}
+        <Box style={styles.transactionsContainer}>
+          {(searchTransactionId || searchUserName) && (
+            <Text style={styles.searchResultsText}>
+              {filteredTransactions.length} result
+              {filteredTransactions.length !== 1 ? "s" : ""} found
             </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+          )}
+          <TransactionAccordion
+            transactions={filteredTransactions}
+            onComplete={handleCompleteTransaction}
+            onDelete={handleDeleteTransaction}
+            loading={loading}
+          />
+        </Box>
 
-      {/* Add Transaction Button */}
-      <Box style={styles.searchAndAddButtonContainer}>
-        <Button size="sm" onPress={() => setShowAddModal(true)}>
-          <ButtonIcon as={Plus} />
-          <ButtonText>Add transaction</ButtonText>
-        </Button>
-      </Box>
-
-      {/* Transactions List */}
-      <Box style={styles.transactionsContainer}>
-        <TransactionAccordion
-          transactions={filteredTransactions}
-          onComplete={handleCompleteTransaction}
-          onDelete={handleDeleteTransaction}
-          loading={loading}
+        {/* Add Transaction Modal */}
+        <AddTransactionModal
+          visible={showAddModal}
+          onClose={() => setShowAddModal(false)}
+          onSuccess={handleTransactionSuccess}
         />
-      </Box>
-
-      {/* Add Transaction Modal */}
-      <AddTransactionModal
-        visible={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        onSuccess={handleTransactionSuccess}
-      />
-    </ScrollView>
+      </ScrollView>
+    </AdminGuard>
   );
 }
 
 const styles = StyleSheet.create({
-  searchAndAddButtonContainer: {
+  searchAndAddContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    gap: 12,
     borderWidth: 0,
-    borderColor: "red",
-    paddingRight: 16,
-    alignItems: "flex-end",
+  },
+  searchInputContainer: {
+    flex: 1,
+    position: "relative",
+  },
+  searchIcon: {
+    position: "absolute",
+    left: 12,
+    top: "50%",
+    marginTop: -10,
+    zIndex: 1,
+  },
+  searchInput: {
+    paddingLeft: 40,
+    paddingRight: 40,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+  },
+  clearButton: {
+    position: "absolute",
+    right: 12,
+    top: "50%",
+    marginTop: -9,
+  },
+  addButton: {
+    flexShrink: 0,
+  },
+  searchResultsText: {
+    fontSize: 14,
+    color: "#6b7280",
+    marginBottom: 12,
+    fontStyle: "italic",
   },
   container: {
     flex: 1,

@@ -31,6 +31,9 @@ import {
 import { useRecords, RecordStatus } from "@/context/RecordsContext";
 import DateTimePicker from "@/components/DateTimePicker";
 import { HStack } from "@/components/ui/hstack";
+import { LineChart } from "react-native-chart-kit";
+import { Dimensions } from "react-native";
+import AdminGuard from "@/components/AdminGuard";
 
 interface FilterState {
   status: RecordStatus[];
@@ -56,6 +59,7 @@ export default function RecordsReport() {
     startDate: null,
     endDate: null,
   });
+  const [viewMode, setViewMode] = useState<"report" | "records">("report");
 
   const statusOptions: RecordStatus[] = [
     "Complete",
@@ -323,6 +327,37 @@ export default function RecordsReport() {
   const hasActiveFilters =
     filters.status.length > 0 || filters.startDate || filters.endDate;
 
+  const aggregateEquipmentUsage = (records: any[]) => {
+    const map: Record<string, { name: string; count: number }> = {};
+
+    records.forEach((record) => {
+      record.items.forEach((item: any) => {
+        if (!map[item.equipmentId]) {
+          map[item.equipmentId] = {
+            name: item.itemName,
+            count: 0,
+          };
+        }
+        map[item.equipmentId].count += item.quantity;
+      });
+    });
+
+    return Object.values(map);
+  };
+
+  const screenWidth = Dimensions.get("window").width;
+
+  const usageData = aggregateEquipmentUsage(filteredRecords);
+
+  const chartData = {
+    labels: usageData.map((u) => u.name),
+    datasets: [
+      {
+        data: usageData.map((u) => u.count),
+      },
+    ],
+  };
+
   if (loading) {
     return (
       <Box style={styles.centerContainer}>
@@ -340,332 +375,451 @@ export default function RecordsReport() {
   }
 
   return (
-    <View style={styles.container}>
-      {/* Search and Filter Bar */}
-      <View style={styles.searchFilterContainer}>
-        <View style={styles.searchRow}>
-          <View style={styles.searchInputContainer}>
-            <SearchIcon size={20} color="#6b7280" style={styles.searchIcon} />
-            <Input style={styles.searchInput}>
-              <InputField
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Search by name, email, or transaction ID..."
-                placeholderTextColor="#9ca3af"
-              />
-            </Input>
-            {searchQuery && (
-              <TouchableOpacity
-                onPress={() => setSearchQuery("")}
-                style={styles.clearButton}
-              >
-                <XIcon size={18} color="#6b7280" />
-              </TouchableOpacity>
-            )}
-          </View>
-          <TouchableOpacity
-            style={[
-              styles.filterButton,
-              hasActiveFilters && styles.filterButtonActive,
-            ]}
-            onPress={() => setShowFilterModal(true)}
-          >
-            <FilterIcon
-              size={20}
-              color={hasActiveFilters ? "#3b82f6" : "#6b7280"}
-            />
-            {hasActiveFilters && (
-              <View style={styles.filterBadge}>
-                <Text style={styles.filterBadgeText}>
-                  {filters.status.length +
-                    (filters.startDate ? 1 : 0) +
-                    (filters.endDate ? 1 : 0)}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Active Filters Display */}
-        {hasActiveFilters && (
-          <View style={styles.activeFiltersContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.activeFiltersList}>
-                {filters.status.map((status) => (
-                  <View key={status} style={styles.filterChip}>
-                    <Text style={styles.filterChipText}>{status}</Text>
-                    <TouchableOpacity
-                      onPress={() => toggleStatusFilter(status)}
-                    >
-                      <XIcon size={14} color="#6b7280" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-                {filters.startDate && (
-                  <View style={styles.filterChip}>
-                    <Text style={styles.filterChipText}>
-                      From: {formatDate(new Date(filters.startDate))}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() =>
-                        setFilters((prev) => ({ ...prev, startDate: null }))
-                      }
-                    >
-                      <XIcon size={14} color="#6b7280" />
-                    </TouchableOpacity>
-                  </View>
-                )}
-                {filters.endDate && (
-                  <View style={styles.filterChip}>
-                    <Text style={styles.filterChipText}>
-                      To: {formatDate(new Date(filters.endDate))}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() =>
-                        setFilters((prev) => ({ ...prev, endDate: null }))
-                      }
-                    >
-                      <XIcon size={14} color="#6b7280" />
-                    </TouchableOpacity>
-                  </View>
-                )}
+    <AdminGuard>
+      <View style={styles.container}>
+        {/* Search and Filter Bar */}
+        <View style={styles.searchFilterContainer}>
+          <View style={styles.searchRow}>
+            <View style={styles.searchInputContainer}>
+              <SearchIcon size={20} color="#6b7280" style={styles.searchIcon} />
+              <Input style={styles.searchInput}>
+                <InputField
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Search by name, email, or transaction ID..."
+                  placeholderTextColor="#9ca3af"
+                />
+              </Input>
+              {searchQuery && (
                 <TouchableOpacity
-                  style={styles.clearFiltersButton}
-                  onPress={clearFilters}
+                  onPress={() => setSearchQuery("")}
+                  style={styles.clearButton}
                 >
-                  <Text style={styles.clearFiltersText}>Clear All</Text>
+                  <XIcon size={18} color="#6b7280" />
                 </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.filterButton,
+                hasActiveFilters && styles.filterButtonActive,
+              ]}
+              onPress={() => setShowFilterModal(true)}
+            >
+              <FilterIcon
+                size={20}
+                color={hasActiveFilters ? "#3b82f6" : "#6b7280"}
+              />
+              {hasActiveFilters && (
+                <View style={styles.filterBadge}>
+                  <Text style={styles.filterBadgeText}>
+                    {filters.status.length +
+                      (filters.startDate ? 1 : 0) +
+                      (filters.endDate ? 1 : 0)}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Active Filters Display */}
+          {hasActiveFilters && (
+            <View style={styles.activeFiltersContainer}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.activeFiltersList}>
+                  {filters.status.map((status) => (
+                    <View key={status} style={styles.filterChip}>
+                      <Text style={styles.filterChipText}>{status}</Text>
+                      <TouchableOpacity
+                        onPress={() => toggleStatusFilter(status)}
+                      >
+                        <XIcon size={14} color="#6b7280" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  {filters.startDate && (
+                    <View style={styles.filterChip}>
+                      <Text style={styles.filterChipText}>
+                        From: {formatDate(new Date(filters.startDate))}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() =>
+                          setFilters((prev) => ({ ...prev, startDate: null }))
+                        }
+                      >
+                        <XIcon size={14} color="#6b7280" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  {filters.endDate && (
+                    <View style={styles.filterChip}>
+                      <Text style={styles.filterChipText}>
+                        To: {formatDate(new Date(filters.endDate))}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() =>
+                          setFilters((prev) => ({ ...prev, endDate: null }))
+                        }
+                      >
+                        <XIcon size={14} color="#6b7280" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  <TouchableOpacity
+                    style={styles.clearFiltersButton}
+                    onPress={clearFilters}
+                  >
+                    <Text style={styles.clearFiltersText}>Clear All</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Stats Summary with Print Button */}
+          <View style={styles.statsHeader}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.statsScrollView}
+            >
+              <View style={styles.statsContainer}>
+                <View style={styles.statCard}>
+                  <Text style={styles.statValue}>{stats.total}</Text>
+                  <Text style={styles.statLabel}>Total Records</Text>
+                </View>
+                <View style={styles.statCardGreen}>
+                  <Text style={styles.statValueGreen}>{stats.complete}</Text>
+                  <Text style={styles.statLabel}>Complete</Text>
+                </View>
+                <View style={styles.statCardOrange}>
+                  <Text style={styles.statValueOrange}>
+                    {stats.incomplete + stats.incompleteAndOverdue}
+                  </Text>
+                  <Text style={styles.statLabel}>Incomplete</Text>
+                </View>
+                <View style={styles.statCardRed}>
+                  <Text style={styles.statValueRed}>
+                    ₱{stats.totalFines.toFixed(2)}
+                  </Text>
+                  <Text style={styles.statLabel}>Total Fines</Text>
+                </View>
               </View>
             </ScrollView>
+            <TouchableOpacity style={styles.printButton} onPress={handlePrint}>
+              <PrinterIcon size={20} color="#ffffff" />
+              <Text style={styles.printButtonText}>Print</Text>
+            </TouchableOpacity>
           </View>
-        )}
+        </View>
 
-        {/* Stats Summary with Print Button */}
-        <View style={styles.statsHeader}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.statsScrollView}
+        <View
+          style={{
+            flexDirection: "row",
+            paddingLeft: 16,
+            paddingRight: 16,
+            marginTop: 8,
+          }}
+        >
+          <TouchableOpacity
+            onPress={() => setViewMode("report")}
+            style={{
+              flex: 1,
+              padding: 10,
+              borderRadius: 8,
+              backgroundColor: viewMode === "report" ? "#3b82f6" : "#e5e7eb",
+              marginRight: 6,
+              alignItems: "center",
+            }}
           >
-            <View style={styles.statsContainer}>
-              <View style={styles.statCard}>
-                <Text style={styles.statValue}>{stats.total}</Text>
-                <Text style={styles.statLabel}>Total Records</Text>
-              </View>
-              <View style={styles.statCardGreen}>
-                <Text style={styles.statValueGreen}>{stats.complete}</Text>
-                <Text style={styles.statLabel}>Complete</Text>
-              </View>
-              <View style={styles.statCardOrange}>
-                <Text style={styles.statValueOrange}>
-                  {stats.incomplete + stats.incompleteAndOverdue}
-                </Text>
-                <Text style={styles.statLabel}>Incomplete</Text>
-              </View>
-              <View style={styles.statCardRed}>
-                <Text style={styles.statValueRed}>
-                  ₱{stats.totalFines.toFixed(2)}
-                </Text>
-                <Text style={styles.statLabel}>Total Fines</Text>
-              </View>
-            </View>
-          </ScrollView>
-          <TouchableOpacity style={styles.printButton} onPress={handlePrint}>
-            <PrinterIcon size={20} color="#ffffff" />
-            <Text style={styles.printButtonText}>Print</Text>
+            <Text
+              style={{
+                color: viewMode === "report" ? "#fff" : "#374151",
+                fontWeight: "600",
+              }}
+            >
+              📊 Equipment Usage Report
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setViewMode("records")}
+            style={{
+              flex: 1,
+              padding: 10,
+              borderRadius: 8,
+              backgroundColor: viewMode === "records" ? "#3b82f6" : "#e5e7eb",
+              marginLeft: 6,
+              alignItems: "center",
+            }}
+          >
+            <Text
+              style={{
+                color: viewMode === "records" ? "#fff" : "#374151",
+                fontWeight: "600",
+              }}
+            >
+              📋 Records List
+            </Text>
           </TouchableOpacity>
         </View>
-      </View>
 
-      {/* Records List */}
-      <ScrollView style={styles.recordsList}>
-        {filteredRecords.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No records found</Text>
-          </View>
-        ) : (
-          <View style={styles.cardsContainer}>
-            {filteredRecords.map((record) => (
-              <View key={record.id} style={styles.recordCard}>
-                {/* Card Header */}
-                <View style={styles.cardHeader}>
-                  <View style={styles.headerLeft}>
-                    <View style={styles.nameStatusRow}>
-                      <Text style={styles.studentName}>
-                        {record.studentName}
-                      </Text>
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          {
-                            backgroundColor: getStatusColor(record.finalStatus),
-                          },
-                        ]}
-                      >
-                        <Text style={styles.statusText}>
-                          {record.finalStatus}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.studentEmail}>
-                      {record.studentEmail}
-                    </Text>
-                    <Text style={styles.transactionId}>
-                      {record.transactionId}
-                    </Text>
-                  </View>
-                  <View style={styles.headerRight}>
-                    <Text style={styles.dateLabel}>Borrowed:</Text>
-                    <Text style={styles.dateValue}>
-                      {formatDate(record.borrowedDate)}
-                    </Text>
-                    <Text style={styles.dateLabel}>Completed:</Text>
-                    <Text style={styles.dateValue}>
-                      {formatDateTime(record.completedDate)}
-                    </Text>
-                  </View>
+        {viewMode === "report" ? (
+          <>
+            {/* 📊 Equipment Usage Report */}
+            <View
+              style={{
+                padding: 16,
+                backgroundColor: "#fff",
+                borderBottomWidth: 1,
+                borderColor: "#e5e7eb",
+              }}
+            >
+              <Text
+                style={{ fontSize: 16, fontWeight: "600", marginBottom: 12 }}
+              >
+                Equipment Usage Report
+              </Text>
+
+              {usageData.length === 0 ? (
+                <Text style={{ color: "#6b7280" }}>
+                  No usage data available.
+                </Text>
+              ) : (
+                <ScrollView horizontal>
+                  <LineChart
+                    data={chartData}
+                    width={Math.max(screenWidth, usageData.length * 80)}
+                    height={280}
+                    fromZero
+                    yAxisLabel=""
+                    chartConfig={{
+                      backgroundGradientFrom: "#ffffff",
+                      backgroundGradientTo: "#ffffff",
+                      decimalPlaces: 0,
+                      color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+                      labelColor: () => "#374151",
+                      propsForDots: {
+                        r: "4",
+                        strokeWidth: "2",
+                        stroke: "#2563eb",
+                      },
+                      propsForBackgroundLines: {
+                        strokeDasharray: "",
+                      },
+                    }}
+                    bezier
+                    style={{ borderRadius: 12 }}
+                  />
+                </ScrollView>
+              )}
+            </View>
+          </>
+        ) : null}
+
+        {viewMode === "records" ? (
+          <>
+            {/* Records List */}
+            <ScrollView style={styles.recordsList}>
+              {filteredRecords.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>No records found</Text>
                 </View>
-
-                {/* Items List */}
-                <View style={styles.itemsSection}>
-                  {record.items.map((item) => (
-                    <View key={item.id} style={styles.itemRow}>
-                      <View style={styles.itemLeft}>
-                        <Text style={styles.itemName}>{item.itemName}</Text>
-                        <Text style={styles.itemDetails}>
-                          Qty: {item.quantity} | ₱{item.pricePerQuantity} each
-                        </Text>
-                        <Text style={styles.returnedInfo}>
-                          Returned: {item.returnedQuantity}/{item.quantity}
-                        </Text>
+              ) : (
+                <View style={styles.cardsContainer}>
+                  {filteredRecords.map((record) => (
+                    <View key={record.id} style={styles.recordCard}>
+                      {/* Card Header */}
+                      <View style={styles.cardHeader}>
+                        <View style={styles.headerLeft}>
+                          <View style={styles.nameStatusRow}>
+                            <Text style={styles.studentName}>
+                              {record.studentName}
+                            </Text>
+                            <View
+                              style={[
+                                styles.statusBadge,
+                                {
+                                  backgroundColor: getStatusColor(
+                                    record.finalStatus,
+                                  ),
+                                },
+                              ]}
+                            >
+                              <Text style={styles.statusText}>
+                                {record.finalStatus}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={styles.studentEmail}>
+                            {record.studentEmail}
+                          </Text>
+                          <Text style={styles.transactionId}>
+                            {record.transactionId}
+                          </Text>
+                        </View>
+                        <View style={styles.headerRight}>
+                          <Text style={styles.dateLabel}>Borrowed:</Text>
+                          <Text style={styles.dateValue}>
+                            {formatDate(record.borrowedDate)}
+                          </Text>
+                          <Text style={styles.dateLabel}>Completed:</Text>
+                          <Text style={styles.dateValue}>
+                            {formatDateTime(record.completedDate)}
+                          </Text>
+                        </View>
                       </View>
-                      <Text style={styles.itemPrice}>
-                        ₱{(item.pricePerQuantity * item.quantity).toFixed(2)}
-                      </Text>
+
+                      {/* Items List */}
+                      <View style={styles.itemsSection}>
+                        {record.items.map((item) => (
+                          <View key={item.id} style={styles.itemRow}>
+                            <View style={styles.itemLeft}>
+                              <Text style={styles.itemName}>
+                                {item.itemName}
+                              </Text>
+                              <Text style={styles.itemDetails}>
+                                Qty: {item.quantity} | ₱{item.pricePerQuantity}{" "}
+                                each
+                              </Text>
+                              <Text style={styles.returnedInfo}>
+                                Returned: {item.returnedQuantity}/
+                                {item.quantity}
+                              </Text>
+                            </View>
+                            <Text style={styles.itemPrice}>
+                              ₱
+                              {(item.pricePerQuantity * item.quantity).toFixed(
+                                2,
+                              )}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+
+                      {/* Summary */}
+                      <View style={styles.summarySection}>
+                        <View style={styles.summaryRow}>
+                          <Text style={styles.summaryLabel}>Total:</Text>
+                          <Text style={styles.totalPrice}>
+                            ₱{record.totalPrice.toFixed(2)}
+                          </Text>
+                        </View>
+                        {record.fineAmount > 0 && (
+                          <View style={styles.summaryRow}>
+                            <Text style={styles.summaryLabel}>Fine:</Text>
+                            <Text style={styles.fineAmount}>
+                              ₱{record.fineAmount.toFixed(2)}
+                            </Text>
+                          </View>
+                        )}
+                        {record.notes && (
+                          <View style={styles.notesSection}>
+                            <Text style={styles.notesLabel}>Notes:</Text>
+                            <Text style={styles.notesText}>{record.notes}</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
                   ))}
                 </View>
+              )}
+            </ScrollView>
+          </>
+        ) : null}
 
-                {/* Summary */}
-                <View style={styles.summarySection}>
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Total:</Text>
-                    <Text style={styles.totalPrice}>
-                      ₱{record.totalPrice.toFixed(2)}
-                    </Text>
-                  </View>
-                  {record.fineAmount > 0 && (
-                    <View style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>Fine:</Text>
-                      <Text style={styles.fineAmount}>
-                        ₱{record.fineAmount.toFixed(2)}
-                      </Text>
-                    </View>
-                  )}
-                  {record.notes && (
-                    <View style={styles.notesSection}>
-                      <Text style={styles.notesLabel}>Notes:</Text>
-                      <Text style={styles.notesText}>{record.notes}</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Filter Modal - Gluestack UI */}
-      <Modal
-        isOpen={showFilterModal}
-        onClose={() => setShowFilterModal(false)}
-        size="lg"
-      >
-        <ModalBackdrop />
-        <ModalContent>
-          <ModalHeader>
-            <Heading size="lg">Filter Records</Heading>
-            <ModalCloseButton>
-              <XIcon size={24} color="#6b7280" />
-            </ModalCloseButton>
-          </ModalHeader>
-          <ModalBody>
-            {/* Status Filter */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterSectionTitle}>Status</Text>
-              <View style={styles.statusOptions}>
-                {statusOptions.map((status) => (
-                  <TouchableOpacity
-                    key={status}
-                    style={[
-                      styles.statusOption,
-                      filters.status.includes(status) &&
-                        styles.statusOptionSelected,
-                    ]}
-                    onPress={() => toggleStatusFilter(status)}
-                  >
-                    <Text
+        {/* Filter Modal - Gluestack UI */}
+        <Modal
+          isOpen={showFilterModal}
+          onClose={() => setShowFilterModal(false)}
+          size="lg"
+        >
+          <ModalBackdrop />
+          <ModalContent>
+            <ModalHeader>
+              <Heading size="lg">Filter Records</Heading>
+              <ModalCloseButton>
+                <XIcon size={24} color="#6b7280" />
+              </ModalCloseButton>
+            </ModalHeader>
+            <ModalBody>
+              {/* Status Filter */}
+              <View style={styles.filterSection}>
+                <Text style={styles.filterSectionTitle}>Status</Text>
+                <View style={styles.statusOptions}>
+                  {statusOptions.map((status) => (
+                    <TouchableOpacity
+                      key={status}
                       style={[
-                        styles.statusOptionText,
+                        styles.statusOption,
                         filters.status.includes(status) &&
-                          styles.statusOptionTextSelected,
+                          styles.statusOptionSelected,
                       ]}
+                      onPress={() => toggleStatusFilter(status)}
                     >
-                      {status}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Text
+                        style={[
+                          styles.statusOptionText,
+                          filters.status.includes(status) &&
+                            styles.statusOptionTextSelected,
+                        ]}
+                      >
+                        {status}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
-            </View>
 
-            {/* Date Range Filter */}
-            <View style={styles.filterSection}>
-              <Text style={styles.filterSectionTitle}>Date Range</Text>
-              <HStack style={styles.dateInputs} space="xs">
-                <View style={styles.dateInput}>
-                  <Text style={styles.dateInputLabel}>Start Date</Text>
-                  <DateTimePicker
-                    value={filters.startDate}
-                    onChange={(date) =>
-                      setFilters((prev) => ({ ...prev, startDate: date }))
-                    }
-                  />
-                </View>
-                <Text> - </Text>
-                <View style={styles.dateInput}>
-                  <Text style={styles.dateInputLabel}>End Date</Text>
-                  <DateTimePicker
-                    value={filters.endDate}
-                    onChange={(date) =>
-                      setFilters((prev) => ({ ...prev, endDate: date }))
-                    }
-                  />
-                </View>
-              </HStack>
-            </View>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant="outline"
-              action="secondary"
-              style={styles.modalClearButton}
-              onPress={() => {
-                clearFilters();
-                setShowFilterModal(false);
-              }}
-            >
-              <ButtonText>Clear All</ButtonText>
-            </Button>
-            <Button
-              style={styles.modalApplyButton}
-              onPress={() => setShowFilterModal(false)}
-            >
-              <ButtonText>Apply Filters</ButtonText>
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-    </View>
+              {/* Date Range Filter */}
+              <View style={styles.filterSection}>
+                <Text style={styles.filterSectionTitle}>Date Range</Text>
+                <HStack style={styles.dateInputs} space="xs">
+                  <View style={styles.dateInput}>
+                    <Text style={styles.dateInputLabel}>Start Date</Text>
+                    <DateTimePicker
+                      value={filters.startDate}
+                      onChange={(date) =>
+                        setFilters((prev) => ({ ...prev, startDate: date }))
+                      }
+                    />
+                  </View>
+                  <Text> - </Text>
+                  <View style={styles.dateInput}>
+                    <Text style={styles.dateInputLabel}>End Date</Text>
+                    <DateTimePicker
+                      value={filters.endDate}
+                      onChange={(date) =>
+                        setFilters((prev) => ({ ...prev, endDate: date }))
+                      }
+                    />
+                  </View>
+                </HStack>
+              </View>
+            </ModalBody>
+            <ModalFooter>
+              <Button
+                variant="outline"
+                action="secondary"
+                style={styles.modalClearButton}
+                onPress={() => {
+                  clearFilters();
+                  setShowFilterModal(false);
+                }}
+              >
+                <ButtonText>Clear All</ButtonText>
+              </Button>
+              <Button
+                style={styles.modalApplyButton}
+                onPress={() => setShowFilterModal(false)}
+              >
+                <ButtonText>Apply Filters</ButtonText>
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      </View>
+    </AdminGuard>
   );
 }
 

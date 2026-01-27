@@ -106,12 +106,12 @@ function hasRequiredFields(transaction: Transaction): boolean {
 }
 
 // ============================================
-// SCHEDULED FUNCTION - Runs Daily
+// SCHEDULED FUNCTION - Runs Daily at Midnight
 // ============================================
 
 export const dailyTransactionMaintenance = onSchedule(
   {
-    schedule: "0 0 * * *",
+    schedule: "0 0 * * *", // Every day at midnight Manila time
     timeZone: "Asia/Manila",
   },
   async (_event) => {
@@ -240,31 +240,70 @@ async function sendReturnReminders(): Promise<number> {
         continue;
       }
 
-      const equipmentNames = transaction.items
-        .map((item) => `${item.itemName} (Qty: ${item.quantity})`)
-        .join(", ");
+      const equipmentList = transaction.items
+        .map((item) => `<li>${item.itemName} (Qty: ${item.quantity})</li>`)
+        .join("");
 
       const notificationRef = db.collection("notifications").doc();
+      const dueDate = transaction.dueDate.toDate().toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
 
-      const dueDate = transaction.dueDate.toDate().toLocaleDateString();
-
-      const message =
-        `Hi ${transaction.studentName},\n\n` +
-        "This is a friendly reminder that your borrowed equipment " +
-        `is due tomorrow:\n\n${equipmentNames}\n\n` +
-        `Due Date: ${dueDate}\n` +
-        `Transaction ID: ${docSnap.id}\n\n` +
-        "Please return the equipment on time to avoid penalties " +
-        "(₱10/day).\n\nThank you!";
-
+      // Trigger Email Extension format
       batch.set(notificationRef, {
+        // Required by Trigger Email extension
+        to: transaction.studentEmail,
+        message: {
+          subject: "⏰ Equipment Return Reminder - Due Tomorrow",
+          text: `Hi ${transaction.studentName},\n\nThis is a friendly reminder that your borrowed equipment is due tomorrow:\n\n${transaction.items.map((item) => `- ${item.itemName} (Qty: ${item.quantity})`).join("\n")}\n\nDue Date: ${dueDate}\nTransaction ID: ${docSnap.id}\n\nPlease return the equipment on time to avoid penalties (₱10/day).\n\nThank you!`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+              <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <h2 style="color: #2563eb; margin-top: 0;">⏰ Equipment Return Reminder</h2>
+                
+                <p>Hi <strong>${transaction.studentName}</strong>,</p>
+                
+                <p>This is a friendly reminder that your borrowed equipment is <strong style="color: #dc2626;">due tomorrow</strong>:</p>
+                
+                <ul style="background-color: #f3f4f6; padding: 15px 15px 15px 35px; border-radius: 4px; margin: 15px 0;">
+                  ${equipmentList}
+                </ul>
+                
+                <table style="width: 100%; margin: 20px 0; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><strong>Due Date:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${dueDate}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><strong>Transaction ID:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-family: monospace;">${docSnap.id}</td>
+                  </tr>
+                </table>
+                
+                <div style="background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 15px; margin: 20px 0;">
+                  <p style="margin: 0; color: #991b1b;">
+                    <strong>⚠️ Important:</strong> Please return the equipment on time to avoid penalties (₱10/day).
+                  </p>
+                </div>
+                
+                <p>Thank you for your cooperation!</p>
+                
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                
+                <p style="font-size: 12px; color: #6b7280; margin: 0;">
+                  This is an automated message from eLabTrack System. Please do not reply to this email.
+                </p>
+              </div>
+            </div>
+          `,
+        },
+
+        // Custom tracking fields (optional, for your records)
         userId: transaction.studentId,
-        email: transaction.studentEmail,
         type: "return_reminder",
-        subject: "⏰ Equipment Return Reminder - Due Tomorrow",
-        message,
         transactionId: docSnap.id,
-        status: "pending",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -321,33 +360,84 @@ async function sendOverdueNotices(): Promise<number> {
 
       const fineAmount = transaction.fineAmount || 0;
 
-      const equipmentNames = transaction.items
-        .map((item) => `${item.itemName} (Qty: ${item.quantity})`)
-        .join(", ");
+      const equipmentList = transaction.items
+        .map((item) => `<li>${item.itemName} (Qty: ${item.quantity})</li>`)
+        .join("");
 
       const notificationRef = db.collection("notifications").doc();
 
-      const dueDateStr = dueDate.toLocaleDateString();
+      const dueDateStr = dueDate.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
 
-      const message =
-        `Hi ${transaction.studentName},\n\n` +
-        "Your borrowed equipment is now OVERDUE:\n\n" +
-        `${equipmentNames}\n\n` +
-        `Due Date: ${dueDateStr}\n` +
-        `Days Overdue: ${daysOverdue}\n` +
-        `Current Fine: ₱${fineAmount}\n` +
-        `Transaction ID: ${docSnap.id}\n\n` +
-        "Please return the equipment immediately to avoid " +
-        "additional penalties.\n\nThank you for your cooperation.";
-
+      // Trigger Email Extension format
       batch.set(notificationRef, {
+        // Required by Trigger Email extension
+        to: transaction.studentEmail,
+        message: {
+          subject: "⚠️ OVERDUE: Equipment Return Required",
+          text: `Hi ${transaction.studentName},\n\nYour borrowed equipment is now OVERDUE:\n\n${transaction.items.map((item) => `- ${item.itemName} (Qty: ${item.quantity})`).join("\n")}\n\nDue Date: ${dueDateStr}\nDays Overdue: ${daysOverdue}\nCurrent Fine: ₱${fineAmount}\nTransaction ID: ${docSnap.id}\n\nPlease return the equipment immediately to avoid additional penalties.\n\nThank you for your cooperation.`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #fef2f2;">
+              <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-top: 4px solid #dc2626;">
+                <h2 style="color: #dc2626; margin-top: 0;">⚠️ OVERDUE: Equipment Return Required</h2>
+                
+                <p>Hi <strong>${transaction.studentName}</strong>,</p>
+                
+                <p style="color: #991b1b;">Your borrowed equipment is now <strong>OVERDUE</strong>:</p>
+                
+                <ul style="background-color: #fef2f2; padding: 15px 15px 15px 35px; border-radius: 4px; margin: 15px 0; border-left: 3px solid #dc2626;">
+                  ${equipmentList}
+                </ul>
+                
+                <table style="width: 100%; margin: 20px 0; border-collapse: collapse; background-color: #fef2f2; border-radius: 4px;">
+                  <tr>
+                    <td style="padding: 12px; border-bottom: 1px solid #fecaca;"><strong>Due Date:</strong></td>
+                    <td style="padding: 12px; border-bottom: 1px solid #fecaca;">${dueDateStr}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 12px; border-bottom: 1px solid #fecaca;"><strong>Days Overdue:</strong></td>
+                    <td style="padding: 12px; border-bottom: 1px solid #fecaca; color: #dc2626; font-weight: bold;">${daysOverdue} day${daysOverdue > 1 ? "s" : ""}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 12px; border-bottom: 1px solid #fecaca;"><strong>Current Fine:</strong></td>
+                    <td style="padding: 12px; border-bottom: 1px solid #fecaca; color: #dc2626; font-weight: bold; font-size: 18px;">₱${fineAmount.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 12px;"><strong>Transaction ID:</strong></td>
+                    <td style="padding: 12px; font-family: monospace;">${docSnap.id}</td>
+                  </tr>
+                </table>
+                
+                <div style="background-color: #7f1d1d; color: white; padding: 20px; border-radius: 4px; margin: 20px 0;">
+                  <p style="margin: 0; font-weight: bold; font-size: 16px;">
+                    ⚠️ URGENT: Please return the equipment immediately to avoid additional penalties.
+                  </p>
+                  <p style="margin: 10px 0 0 0; font-size: 14px;">
+                    Fines increase by ₱10 per day until the equipment is returned.
+                  </p>
+                </div>
+                
+                <p>If you have any questions or concerns, please contact the laboratory office immediately.</p>
+                
+                <p>Thank you for your cooperation.</p>
+                
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                
+                <p style="font-size: 12px; color: #6b7280; margin: 0;">
+                  This is an automated message from eLabTrack System. Please do not reply to this email.
+                </p>
+              </div>
+            </div>
+          `,
+        },
+
+        // Custom tracking fields (optional, for your records)
         userId: transaction.studentId,
-        email: transaction.studentEmail,
         type: "overdue_notice",
-        subject: "⚠️ OVERDUE: Equipment Return Required",
-        message,
         transactionId: docSnap.id,
-        status: "pending",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 

@@ -9,7 +9,8 @@
     "web": "expo start --web",
     "build": "expo export --platform web --output-dir dist",
     "build:preview": "expo export --platform web --output-dir dist",
-    "test": "jest --watchAll"
+    "test": "jest --watchAll",
+    "deploy:web": "expo export --platform web && firebase deploy"
   },
   "jest": {
     "preset": "jest-expo"
@@ -44,10 +45,11 @@
     "react-aria": "^3.41.1",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-chart-kit": "^6.12.0",
     "react-native-reanimated": "~4.1.0",
     "react-native-safe-area-context": "^5.6.1",
     "react-native-screens": "~4.16.0",
-    "react-native-svg": "15.12.1",
+    "react-native-svg": "^15.12.1",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
     "react-stately": "^3.39.0",

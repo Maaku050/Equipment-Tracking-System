@@ -11,6 +11,8 @@ import {
   where,
   Timestamp,
   writeBatch,
+  setDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/firebase/firebaseConfig";
 
@@ -204,7 +206,6 @@ export const updateOverdueTransactions = async () => {
 
     if (updatedCount > 0) {
       await batch.commit();
-      console.log(`Updated ${updatedCount} overdue transactions`);
     }
 
     return updatedCount;
@@ -276,7 +277,6 @@ export const updateOverdueTransactionsOptimized = async () => {
 
     if (updatedCount > 0) {
       await batch.commit();
-      console.log(`Updated ${updatedCount} overdue transactions`);
     }
 
     return updatedCount;
@@ -473,10 +473,63 @@ export const createTransaction = async (
 export const approveTransaction = async (transactionId: string) => {
   try {
     const transactionRef = doc(db, "transactions", transactionId);
+    const snap = await getDoc(transactionRef);
+
+    if (!snap.exists()) throw new Error("Transaction not found");
+
+    const transaction = snap.data() as Transaction;
+
+    // Update transaction
     await updateDoc(transactionRef, {
       status: "Ongoing",
-      borrowedDate: Timestamp.now(), // Update borrowed date to approval time
+      borrowedDate: Timestamp.now(),
       updatedAt: Timestamp.now(),
+    });
+
+    // Build equipment list
+    const equipmentList = transaction.items
+      .map((i) => `<li>${i.itemName} (Qty: ${i.quantity})</li>`)
+      .join("");
+
+    // Create notification
+    const notificationRef = doc(collection(db, "notifications"));
+    await setDoc(notificationRef, {
+      to: transaction.studentEmail,
+      message: {
+        subject: "✅ Equipment Request Approved",
+        text: `Hi ${transaction.studentName},
+
+Your equipment request has been APPROVED and is now ready for pickup.
+
+Items:
+${transaction.items.map((i) => `- ${i.itemName} (Qty: ${i.quantity})`).join("\n")}
+
+Transaction ID: ${transactionId}
+
+Please collect the items and return them on or before the due date.
+
+Thank you!`,
+        html: `
+          <div style="font-family: Arial; max-width:600px; margin:auto; background:#f9fafb; padding:20px;">
+            <div style="background:white; padding:30px; border-radius:8px;">
+              <h2 style="color:#16a34a;">✅ Equipment Request Approved</h2>
+              <p>Hi <strong>${transaction.studentName}</strong>,</p>
+              <p>Your request has been <strong>approved</strong>. The following items are ready for pickup:</p>
+              <ul style="background:#ecfdf5; padding:15px 15px 15px 35px; border-radius:4px;">
+                ${equipmentList}
+              </ul>
+              <p><strong>Transaction ID:</strong> <code>${transactionId}</code></p>
+              <p>Please return the equipment on or before the due date to avoid penalties.</p>
+              <hr>
+              <p style="font-size:12px;color:#6b7280;">Automated message from eLabTrack System.</p>
+            </div>
+          </div>
+        `,
+      },
+      userId: transaction.studentId,
+      type: "transaction_approved",
+      transactionId,
+      createdAt: serverTimestamp(),
     });
   } catch (error) {
     console.error("Error approving transaction:", error);
@@ -487,31 +540,76 @@ export const approveTransaction = async (transactionId: string) => {
 export const denyTransaction = async (transactionId: string) => {
   try {
     const transactionRef = doc(db, "transactions", transactionId);
-    const transactionSnap = await getDoc(transactionRef);
+    const snap = await getDoc(transactionRef);
 
-    if (transactionSnap.exists()) {
-      const transactionData = transactionSnap.data() as Transaction;
-      const batch = writeBatch(db);
+    if (!snap.exists()) return;
 
-      // Return quantities to equipment
-      for (const item of transactionData.items) {
-        const equipmentRef = doc(db, "equipment", item.equipmentId);
-        const equipmentSnap = await getDoc(equipmentRef);
+    const transaction = snap.data() as Transaction;
+    const batch = writeBatch(db);
 
-        if (equipmentSnap.exists()) {
-          const equipmentData = equipmentSnap.data() as Equipment;
+    // Return quantities to equipment
+    for (const item of transaction.items) {
+      const equipmentRef = doc(db, "equipment", item.equipmentId);
+      const equipmentSnap = await getDoc(equipmentRef);
 
-          batch.update(equipmentRef, {
-            availableQuantity: equipmentData.availableQuantity + item.quantity,
-            borrowedQuantity: equipmentData.borrowedQuantity - item.quantity,
-            updatedAt: Timestamp.now(),
-          });
-        }
+      if (equipmentSnap.exists()) {
+        const equipmentData = equipmentSnap.data() as Equipment;
+
+        batch.update(equipmentRef, {
+          availableQuantity: equipmentData.availableQuantity + item.quantity,
+          borrowedQuantity: equipmentData.borrowedQuantity - item.quantity,
+          updatedAt: Timestamp.now(),
+        });
       }
-
-      batch.delete(transactionRef);
-      await batch.commit();
     }
+
+    // Create notification
+    const equipmentList = transaction.items
+      .map((i) => `<li>${i.itemName} (Qty: ${i.quantity})</li>`)
+      .join("");
+
+    const notificationRef = doc(collection(db, "notifications"));
+    batch.set(notificationRef, {
+      to: transaction.studentEmail,
+      message: {
+        subject: "❌ Equipment Request Denied",
+        text: `Hi ${transaction.studentName},
+
+Unfortunately, your equipment request has been DENIED.
+
+Items:
+${transaction.items.map((i) => `- ${i.itemName} (Qty: ${i.quantity})`).join("\n")}
+
+Transaction ID: ${transactionId}
+
+Please contact the lab office if you need clarification.
+
+Thank you.`,
+        html: `
+          <div style="font-family: Arial; max-width:600px; margin:auto; background:#fef2f2; padding:20px;">
+            <div style="background:white; padding:30px; border-radius:8px; border-top:4px solid #dc2626;">
+              <h2 style="color:#dc2626;">❌ Equipment Request Denied</h2>
+              <p>Hi <strong>${transaction.studentName}</strong>,</p>
+              <p>Your request has been <strong>denied</strong> for the following items:</p>
+              <ul style="background:#fee2e2; padding:15px 15px 15px 35px; border-radius:4px;">
+                ${equipmentList}
+              </ul>
+              <p><strong>Transaction ID:</strong> <code>${transactionId}</code></p>
+              <p>If you believe this is a mistake, please contact the laboratory office.</p>
+              <hr>
+              <p style="font-size:12px;color:#6b7280;">Automated message from eLabTrack System.</p>
+            </div>
+          </div>
+        `,
+      },
+      userId: transaction.studentId,
+      type: "transaction_denied",
+      transactionId,
+      createdAt: serverTimestamp(),
+    });
+
+    batch.delete(transactionRef);
+    await batch.commit();
   } catch (error) {
     console.error("Error denying transaction:", error);
     throw error;

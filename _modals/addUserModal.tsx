@@ -48,7 +48,7 @@ export default function AddUserModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const CLOUD_FUNCTION_URL =
-    "http://127.0.0.1:5001/equipment-tracking-syste-65e94/us-central1/userManagement/createUser";
+    "https://us-central1-equipment-tracking-syste-65e94.cloudfunctions.net/userManagement/createUser";
   // TODO: Replace with your actual Cloud Function URL
   // Example: 'https://us-central1-elabtrack-12345.cloudfunctions.net/userManagement/createUser'
 

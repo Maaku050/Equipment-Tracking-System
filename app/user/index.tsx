@@ -173,9 +173,6 @@ export default function StudentDashboard() {
     });
 
     setFilteredItems(filtered);
-    console.log(
-      `🔍 Student ${currentUser.uid} - Filtering by status: ${statusParam}, Count: ${filtered.length}`,
-    );
   }, [statusParam, transactions, records, currentUser]);
 
   useEffect(() => {

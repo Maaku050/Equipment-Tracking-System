@@ -16,6 +16,7 @@ import { Center } from "@/components/ui/center";
 import { useEffect } from "react";
 import { db } from "@/firebase/firebaseConfig";
 import { collection, query, where, getDocs } from "firebase/firestore";
+import AdminGuard from "@/components/AdminGuard";
 
 export default function UsersInterface() {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -109,7 +110,7 @@ export default function UsersInterface() {
   }
 
   return (
-    <>
+    <AdminGuard>
       <ScrollView style={{ padding: 15 }}>
         {users.length === 0 ? (
           <Center className="flex-1 py-20">
@@ -221,6 +222,6 @@ export default function UsersInterface() {
         <FabIcon as={Plus} />
         <FabLabel>Add Student</FabLabel>
       </Fab>
-    </>
+    </AdminGuard>
   );
 }

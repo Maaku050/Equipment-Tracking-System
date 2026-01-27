@@ -1,3 +1,4 @@
+// context/EquipmentContext.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/firebase/firebaseConfig";
@@ -131,8 +132,6 @@ export const EquipmentProvider = ({
             updatedAt: data.updatedAt?.toDate?.() || new Date(),
           };
         });
-
-        console.log("✅ Equipment loaded:", list.length);
         setEquipment(list);
         setStats(calculateStats(list));
         setLoading(false);

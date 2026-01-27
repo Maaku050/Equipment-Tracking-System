@@ -401,8 +401,8 @@ export default function AddTransactionModal({
                   {cart.length > 0 ? (
                     <>
                       <ScrollView
-                        style={{ flex: 1, maxHeight: 400 }}
-                        showsVerticalScrollIndicator={true}
+                        style={{ flex: 1, maxHeight: 250 }}
+                        showsVerticalScrollIndicator={false}
                       >
                         {cart.map((item) => (
                           <HStack key={item.id} style={styles.cartItem}>

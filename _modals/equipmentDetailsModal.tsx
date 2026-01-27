@@ -23,6 +23,8 @@ import { Equipment } from "@/context/EquipmentContext";
 import { useTransaction } from "@/context/TransactionContext";
 import EditEquipmentModal from "@/_modals/editEquipmentModal";
 import { CloseIcon, Icon } from "@/components/ui/icon";
+import { Trash2 } from "lucide-react-native";
+import { deleteEquipmentIfNotBorrowed } from "@/_helpers/equipmentActions";
 
 interface BorrowerInfo {
   studentId: string;
@@ -50,6 +52,9 @@ export default function EquipmentDetailsModal({
   const { transactions } = useTransaction();
   const [borrowers, setBorrowers] = useState<BorrowerInfo[]>([]);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (equipment && visible) {
@@ -205,13 +210,34 @@ export default function EquipmentDetailsModal({
 
                 <Divider />
 
-                <Button
-                  onPress={() => setShowEditModal(true)}
-                  action="secondary"
-                >
-                  <ButtonIcon as={Edit} />
-                  <ButtonText>Edit Equipment Details</ButtonText>
-                </Button>
+                <HStack space="sm">
+                  <Button
+                    onPress={() => setShowEditModal(true)}
+                    action="secondary"
+                    style={{ flex: 1 }}
+                  >
+                    <ButtonIcon as={Edit} />
+                    <ButtonText>Edit Equipment Details</ButtonText>
+                  </Button>
+
+                  <Button
+                    style={{ flex: 1 }}
+                    action="negative"
+                    variant="outline"
+                    isDisabled={equipment.borrowedQuantity > 0}
+                    onPress={() => {
+                      setDeleteError(null);
+                      setShowDeleteModal(true);
+                    }}
+                  >
+                    <ButtonIcon as={Trash2} />
+                    <ButtonText>
+                      {equipment.borrowedQuantity > 0
+                        ? "Cannot Delete (In Use)"
+                        : "Delete Equipment"}
+                    </ButtonText>
+                  </Button>
+                </HStack>
               </VStack>
 
               {/* RIGHT SIDE - Borrowers List */}
@@ -335,6 +361,71 @@ export default function EquipmentDetailsModal({
           onClose();
         }}
       />
+
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        size="md"
+      >
+        <ModalBackdrop />
+        <ModalContent>
+          <ModalHeader>
+            <Heading size="md">Confirm Deletion</Heading>
+            <ModalCloseButton>
+              <Icon as={CloseIcon} />
+            </ModalCloseButton>
+          </ModalHeader>
+
+          <ModalBody>
+            <VStack space="md">
+              <Text className="text-typography-700">
+                Are you sure you want to delete this equipment?
+              </Text>
+              <Text className="text-typography-500 text-sm">
+                This action cannot be undone.
+              </Text>
+
+              {deleteError && (
+                <Text className="text-error-600 text-sm">{deleteError}</Text>
+              )}
+
+              <HStack space="sm" className="mt-4">
+                <Button
+                  action="secondary"
+                  variant="outline"
+                  onPress={() => setShowDeleteModal(false)}
+                  style={{ flex: 1 }}
+                >
+                  <ButtonText>Cancel</ButtonText>
+                </Button>
+
+                <Button
+                  action="negative"
+                  isDisabled={deleting}
+                  style={{ flex: 1 }}
+                  onPress={async () => {
+                    if (!equipment) return;
+                    try {
+                      setDeleting(true);
+                      await deleteEquipmentIfNotBorrowed(equipment.id);
+                      setShowDeleteModal(false);
+                      onClose();
+                    } catch (err: any) {
+                      setDeleteError(
+                        err.message || "Unable to delete equipment.",
+                      );
+                    } finally {
+                      setDeleting(false);
+                    }
+                  }}
+                >
+                  <ButtonText>{deleting ? "Deleting..." : "Delete"}</ButtonText>
+                </Button>
+              </HStack>
+            </VStack>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
     </>
   );
 }

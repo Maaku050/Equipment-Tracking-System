@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/modal";
 import { Button, ButtonText } from "@/components/ui/button";
 import { HStack } from "@/components/ui/hstack";
+import { AuthProvider } from "@/context/AuthContext";
 
 // Custom Drawer Content
 function CustomDrawerContent(props: any) {
@@ -114,246 +115,248 @@ export default function RootLayout() {
   };
 
   return (
-    <TransactionProvider>
-      <EquipmentProvider>
-        <RecordsProvider>
-          <UsersProvider>
-            <GluestackUIProvider mode="light">
-              <Modal
-                isOpen={showLogoutModal}
-                onClose={() => setShowLogoutModal(false)}
-              >
-                <ModalBackdrop />
-                <ModalContent>
-                  <ModalHeader>
-                    <Heading size="md">Confirm Logout</Heading>
-                  </ModalHeader>
+    <AuthProvider>
+      <TransactionProvider>
+        <EquipmentProvider>
+          <RecordsProvider>
+            <UsersProvider>
+              <GluestackUIProvider mode="light">
+                <Modal
+                  isOpen={showLogoutModal}
+                  onClose={() => setShowLogoutModal(false)}
+                >
+                  <ModalBackdrop />
+                  <ModalContent>
+                    <ModalHeader>
+                      <Heading size="md">Confirm Logout</Heading>
+                    </ModalHeader>
 
-                  <ModalBody>
-                    <Text style={{ color: "#374151", fontSize: 14 }}>
-                      Are you sure you want to log out of your account?
-                    </Text>
-                  </ModalBody>
+                    <ModalBody>
+                      <Text style={{ color: "#374151", fontSize: 14 }}>
+                        Are you sure you want to log out of your account?
+                      </Text>
+                    </ModalBody>
 
-                  <ModalFooter style={{ gap: 12 }}>
-                    <Button
-                      variant="outline"
-                      action="secondary"
-                      onPress={() => setShowLogoutModal(false)}
-                    >
-                      <ButtonText>Cancel</ButtonText>
-                    </Button>
+                    <ModalFooter style={{ gap: 12 }}>
+                      <Button
+                        variant="outline"
+                        action="secondary"
+                        onPress={() => setShowLogoutModal(false)}
+                      >
+                        <ButtonText>Cancel</ButtonText>
+                      </Button>
 
-                    <Button action="negative" onPress={confirmLogout}>
-                      <ButtonText>Logout</ButtonText>
-                    </Button>
-                  </ModalFooter>
-                </ModalContent>
-              </Modal>
-              <Drawer
-                drawerContent={(props: any) => (
-                  <CustomDrawerContent {...props} />
-                )}
-                screenOptions={{
-                  drawerType: isLargeScreen
-                    ? "permanent"
-                    : isMediumScreen
-                      ? "front"
-                      : "front",
-                  drawerStyle: isLargeScreen
-                    ? {
-                        width: 200,
-                        backgroundColor: theme.background,
-                        borderRightWidth: 0,
-                      }
-                    : {
-                        width: "70%",
-                        backgroundColor: theme.background,
+                      <Button action="negative" onPress={confirmLogout}>
+                        <ButtonText>Logout</ButtonText>
+                      </Button>
+                    </ModalFooter>
+                  </ModalContent>
+                </Modal>
+                <Drawer
+                  drawerContent={(props: any) => (
+                    <CustomDrawerContent {...props} />
+                  )}
+                  screenOptions={{
+                    drawerType: isLargeScreen
+                      ? "permanent"
+                      : isMediumScreen
+                        ? "front"
+                        : "front",
+                    drawerStyle: isLargeScreen
+                      ? {
+                          width: 200,
+                          backgroundColor: theme.background,
+                          borderRightWidth: 0,
+                        }
+                      : {
+                          width: "70%",
+                          backgroundColor: theme.background,
+                        },
+                    headerShown: true,
+                    drawerActiveTintColor: theme.drawerActive,
+                    drawerInactiveTintColor: theme.drawerInactive,
+                    drawerActiveBackgroundColor: theme.drawerActiveBg,
+                    drawerInactiveBackgroundColor: "transparent",
+                    drawerItemStyle: {
+                      borderRadius: 8,
+                      marginHorizontal: 0,
+                      marginVertical: 4,
+                      paddingLeft: 0,
+                    },
+                    drawerLabelStyle: {
+                      fontSize: 15,
+                      fontWeight: "600",
+                      marginLeft: -16,
+                    },
+                    overlayColor: "transparent",
+                    sceneStyle: { backgroundColor: "transparent" },
+                    headerStyle: {
+                      backgroundColor: theme.headerBg,
+                      borderColor: theme.headerBg,
+                    },
+                    headerTitleStyle: {
+                      fontWeight: "bold",
+                      fontSize: 24,
+                      color: theme.text,
+                    },
+                    headerTintColor: theme.text,
+                  }}
+                >
+                  <Drawer.Screen
+                    name="index"
+                    options={{
+                      title: "Dashboard",
+                      drawerIcon: ({ color }) => (
+                        <LayoutDashboard
+                          color={color}
+                          size={25}
+                          className="mr-2"
+                        />
+                      ),
+                      headerTitle: () => (
+                        <>
+                          <HStack style={{ alignItems: "center" }}>
+                            <LayoutDashboard
+                              color={"white"}
+                              size={25}
+                              className="mr-1"
+                            />
+                            <Heading style={{ color: "white" }}>
+                              Dashboard
+                            </Heading>
+                          </HStack>
+                        </>
+                      ),
+                      headerStyle: {
+                        ...styles.headerSpace,
+                        backgroundColor: theme.headerBg,
                       },
-                  headerShown: true,
-                  drawerActiveTintColor: theme.drawerActive,
-                  drawerInactiveTintColor: theme.drawerInactive,
-                  drawerActiveBackgroundColor: theme.drawerActiveBg,
-                  drawerInactiveBackgroundColor: "transparent",
-                  drawerItemStyle: {
-                    borderRadius: 8,
-                    marginHorizontal: 0,
-                    marginVertical: 4,
-                    paddingLeft: 0,
-                  },
-                  drawerLabelStyle: {
-                    fontSize: 15,
-                    fontWeight: "600",
-                    marginLeft: -16,
-                  },
-                  overlayColor: "transparent",
-                  sceneStyle: { backgroundColor: "transparent" },
-                  headerStyle: {
-                    backgroundColor: theme.headerBg,
-                    borderColor: theme.headerBg,
-                  },
-                  headerTitleStyle: {
-                    fontWeight: "bold",
-                    fontSize: 24,
-                    color: theme.text,
-                  },
-                  headerTintColor: theme.text,
-                }}
-              >
-                <Drawer.Screen
-                  name="index"
-                  options={{
-                    title: "Dashboard",
-                    drawerIcon: ({ color }) => (
-                      <LayoutDashboard
-                        color={color}
-                        size={25}
-                        className="mr-2"
-                      />
-                    ),
-                    headerTitle: () => (
-                      <>
-                        <HStack style={{ alignItems: "center" }}>
-                          <LayoutDashboard
-                            color={"white"}
-                            size={25}
-                            className="mr-1"
-                          />
-                          <Heading style={{ color: "white" }}>
-                            Dashboard
-                          </Heading>
-                        </HStack>
-                      </>
-                    ),
-                    headerStyle: {
-                      ...styles.headerSpace,
-                      backgroundColor: theme.headerBg,
-                    },
-                    headerRight: () => (
-                      <TouchableOpacity
-                        style={styles.logoutButton}
-                        onPress={handleLogout}
-                      >
-                        <LogOut size={16} color="#ef4444" />
-                      </TouchableOpacity>
-                    ),
-                  }}
-                />
-                <Drawer.Screen
-                  name="inventory"
-                  options={{
-                    title: "Inventory",
-                    drawerIcon: ({ color }) => (
-                      <Boxes color={color} size={25} className="mr-2" />
-                    ),
-                    headerTitle: () => (
-                      <>
-                        <HStack style={{ alignItems: "center" }}>
-                          <Boxes color={"white"} size={25} className="mr-1" />
-                          <Heading style={{ color: "white" }}>
-                            Inventory
-                          </Heading>
-                        </HStack>
-                      </>
-                    ),
-                    headerStyle: {
-                      ...styles.headerSpace,
-                      backgroundColor: theme.headerBg,
-                    },
-                    headerRight: () => (
-                      <TouchableOpacity
-                        style={styles.logoutButton}
-                        onPress={handleLogout}
-                      >
-                        <LogOut size={16} color="#ef4444" />
-                      </TouchableOpacity>
-                    ),
-                  }}
-                />
-                <Drawer.Screen
-                  name="create-transaction"
-                  options={{
-                    drawerItemStyle: { display: "none" },
-                    drawerIcon: ({ color }) => (
-                      <LayoutDashboard
-                        color={color}
-                        size={25}
-                        className="mr-2"
-                      />
-                    ),
-                    headerTitle: () => (
-                      <>
-                        <HStack style={{ alignItems: "center" }}>
-                          <LayoutDashboard
-                            color={"white"}
-                            size={25}
-                            className="mr-1"
-                          />
-                          <Heading style={{ color: "white" }}>
-                            Dashboard
-                          </Heading>
-                        </HStack>
-                      </>
-                    ),
-                    headerStyle: {
-                      ...styles.headerSpace,
-                      backgroundColor: theme.headerBg,
-                    },
-                    headerRight: () => (
-                      <TouchableOpacity
-                        style={styles.logoutButton}
-                        onPress={handleLogout}
-                      >
-                        <LogOut size={16} color="#ef4444" />
-                      </TouchableOpacity>
-                    ),
-                  }}
-                />
-                <Drawer.Screen
-                  name="edit-profile"
-                  options={{
-                    drawerItemStyle: { display: "none" },
-                    drawerIcon: ({ color }) => (
-                      <LayoutDashboard
-                        color={color}
-                        size={25}
-                        className="mr-2"
-                      />
-                    ),
-                    headerTitle: () => (
-                      <>
-                        <HStack style={{ alignItems: "center" }}>
-                          <LayoutDashboard
-                            color={"white"}
-                            size={25}
-                            className="mr-1"
-                          />
-                          <Heading style={{ color: "white" }}>
-                            Dashboard
-                          </Heading>
-                        </HStack>
-                      </>
-                    ),
-                    headerStyle: {
-                      ...styles.headerSpace,
-                      backgroundColor: theme.headerBg,
-                    },
-                    headerRight: () => (
-                      <TouchableOpacity
-                        style={styles.logoutButton}
-                        onPress={handleLogout}
-                      >
-                        <LogOut size={16} color="#ef4444" />
-                      </TouchableOpacity>
-                    ),
-                  }}
-                />
-              </Drawer>
-            </GluestackUIProvider>
-          </UsersProvider>
-        </RecordsProvider>
-      </EquipmentProvider>
-    </TransactionProvider>
+                      headerRight: () => (
+                        <TouchableOpacity
+                          style={styles.logoutButton}
+                          onPress={handleLogout}
+                        >
+                          <LogOut size={16} color="#ef4444" />
+                        </TouchableOpacity>
+                      ),
+                    }}
+                  />
+                  <Drawer.Screen
+                    name="inventory"
+                    options={{
+                      title: "Inventory",
+                      drawerIcon: ({ color }) => (
+                        <Boxes color={color} size={25} className="mr-2" />
+                      ),
+                      headerTitle: () => (
+                        <>
+                          <HStack style={{ alignItems: "center" }}>
+                            <Boxes color={"white"} size={25} className="mr-1" />
+                            <Heading style={{ color: "white" }}>
+                              Inventory
+                            </Heading>
+                          </HStack>
+                        </>
+                      ),
+                      headerStyle: {
+                        ...styles.headerSpace,
+                        backgroundColor: theme.headerBg,
+                      },
+                      headerRight: () => (
+                        <TouchableOpacity
+                          style={styles.logoutButton}
+                          onPress={handleLogout}
+                        >
+                          <LogOut size={16} color="#ef4444" />
+                        </TouchableOpacity>
+                      ),
+                    }}
+                  />
+                  <Drawer.Screen
+                    name="create-transaction"
+                    options={{
+                      drawerItemStyle: { display: "none" },
+                      drawerIcon: ({ color }) => (
+                        <LayoutDashboard
+                          color={color}
+                          size={25}
+                          className="mr-2"
+                        />
+                      ),
+                      headerTitle: () => (
+                        <>
+                          <HStack style={{ alignItems: "center" }}>
+                            <LayoutDashboard
+                              color={"white"}
+                              size={25}
+                              className="mr-1"
+                            />
+                            <Heading style={{ color: "white" }}>
+                              Dashboard
+                            </Heading>
+                          </HStack>
+                        </>
+                      ),
+                      headerStyle: {
+                        ...styles.headerSpace,
+                        backgroundColor: theme.headerBg,
+                      },
+                      headerRight: () => (
+                        <TouchableOpacity
+                          style={styles.logoutButton}
+                          onPress={handleLogout}
+                        >
+                          <LogOut size={16} color="#ef4444" />
+                        </TouchableOpacity>
+                      ),
+                    }}
+                  />
+                  <Drawer.Screen
+                    name="edit-profile"
+                    options={{
+                      drawerItemStyle: { display: "none" },
+                      drawerIcon: ({ color }) => (
+                        <LayoutDashboard
+                          color={color}
+                          size={25}
+                          className="mr-2"
+                        />
+                      ),
+                      headerTitle: () => (
+                        <>
+                          <HStack style={{ alignItems: "center" }}>
+                            <LayoutDashboard
+                              color={"white"}
+                              size={25}
+                              className="mr-1"
+                            />
+                            <Heading style={{ color: "white" }}>
+                              Dashboard
+                            </Heading>
+                          </HStack>
+                        </>
+                      ),
+                      headerStyle: {
+                        ...styles.headerSpace,
+                        backgroundColor: theme.headerBg,
+                      },
+                      headerRight: () => (
+                        <TouchableOpacity
+                          style={styles.logoutButton}
+                          onPress={handleLogout}
+                        >
+                          <LogOut size={16} color="#ef4444" />
+                        </TouchableOpacity>
+                      ),
+                    }}
+                  />
+                </Drawer>
+              </GluestackUIProvider>
+            </UsersProvider>
+          </RecordsProvider>
+        </EquipmentProvider>
+      </TransactionProvider>
+    </AuthProvider>
   );
 }
 
@@ -364,6 +367,7 @@ const styles = StyleSheet.create({
     alignContent: "center",
     alignItems: "center",
     height: 50,
+    borderBottomWidth: 0,
   },
   logoutButton: {
     width: 36,

@@ -136,7 +136,6 @@ export const UsersProvider = ({ children }: { children: React.ReactNode }) => {
           })
           .filter((user) => user.role !== "admin"); // Filter out admins
 
-        console.log("✅ Users loaded (excluding admins):", list.length);
         setUsers(list);
         setStats(calculateStats(list));
         setLoading(false);
