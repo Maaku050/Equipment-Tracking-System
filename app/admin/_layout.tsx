@@ -59,15 +59,15 @@ function CustomDrawerContent(props: any) {
           padding: 20,
           alignItems: "center",
           paddingTop: 20,
-          paddingBottom: 20,
+          paddingBottom: 10,
           flexDirection: "row",
           justifyContent: "center",
           gap: 12,
         }}
       >
         <Image
-          source={require("@/assets/images/sksu-logo.png")}
-          style={{ width: 70, height: 70 }}
+          source={require("@/assets/images/FSMO_Logo.png")}
+          style={{ width: 90, height: 90 }}
           resizeMode="contain"
         />
       </View>

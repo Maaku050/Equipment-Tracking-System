@@ -138,14 +138,14 @@ export default function LoginScreen() {
               <View
                 style={{
                   marginBottom: 32,
-                  padding: 20,
+                  padding: 10,
                   backgroundColor: "rgba(255, 255, 255, 0.1)",
                   borderRadius: 100,
                 }}
               >
                 <Image
-                  source={require("@/assets/images/sksu-logo.png")}
-                  style={{ width: 100, height: 100 }}
+                  source={require("@/assets/images/FSMO_Logo.png")}
+                  style={{ width: 150, height: 150 }}
                   resizeMode="contain"
                 />
               </View>
@@ -216,8 +216,8 @@ export default function LoginScreen() {
                 }}
               >
                 <Image
-                  source={require("@/assets/images/sksu-logo.png")}
-                  style={{ width: 80, height: 80, marginBottom: 16 }}
+                  source={require("@/assets/images/FSMO_Logo.png")}
+                  style={{ width: 100, height: 100, marginBottom: 16 }}
                   resizeMode="contain"
                 />
                 <Heading
