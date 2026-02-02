@@ -120,7 +120,7 @@ export default function EquipmentInterface() {
                         Borrowed: {item.borrowedQuantity}
                       </Text>
                       <Text className="text-sm text-typography-600">
-                        Price: ${item.pricePerUnit.toFixed(2)}
+                        Price: ₱{item.pricePerUnit.toFixed(2)}
                       </Text>
                     </Box>
 

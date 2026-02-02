@@ -11,7 +11,12 @@ import {
 import { router } from "expo-router";
 import { auth, db, storage } from "@/firebase/firebaseConfig";
 import { doc, updateDoc } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
 import * as ImagePicker from "expo-image-picker";
 import { Box } from "@/components/ui/box";
 import { VStack } from "@/components/ui/vstack";
@@ -93,19 +98,34 @@ export default function EditProfileScreen() {
     }
   };
 
-  const uploadImage = async (uri: string, userId: string): Promise<string> => {
+  const uploadImage = async (
+    uri: string,
+    userId: string,
+  ): Promise<{ url: string; path: string }> => {
     try {
       const response = await fetch(uri);
       const blob = await response.blob();
 
-      const storageRef = ref(storage, `user-profiles/${userId}.jpg`);
+      const path = `user-profiles/${userId}.jpg`;
+      const storageRef = ref(storage, path);
       await uploadBytes(storageRef, blob);
 
       const downloadURL = await getDownloadURL(storageRef);
-      return downloadURL;
+      return { url: downloadURL, path };
     } catch (error) {
       console.error("Error uploading image:", error);
       throw error;
+    }
+  };
+
+  const deleteOldImage = async (imagePath: string) => {
+    try {
+      const imageRef = ref(storage, imagePath);
+      await deleteObject(imageRef);
+      console.log("Old image deleted successfully");
+    } catch (error) {
+      console.error("Error deleting old image:", error);
+      // Don't throw - continue even if delete fails
     }
   };
 
@@ -123,10 +143,19 @@ export default function EditProfileScreen() {
 
     try {
       let imageUrl = studentData.imageUrl || "";
+      let imagePath = studentData.imagePath;
 
       // Upload new image if changed
       if (imageUri && imageUri !== studentData.imageUrl) {
-        imageUrl = await uploadImage(imageUri, currentUser.uid);
+        // Delete old image if path exists
+        if (studentData.imagePath) {
+          await deleteOldImage(studentData.imagePath);
+        }
+
+        // Upload new image
+        const uploadResult = await uploadImage(imageUri, currentUser.uid);
+        imageUrl = uploadResult.url;
+        imagePath = uploadResult.path;
       }
 
       // Update Firestore
@@ -136,6 +165,7 @@ export default function EditProfileScreen() {
         course,
         contactNumber,
         imageUrl,
+        imagePath, // Store the path
         updatedAt: new Date(),
       });
 

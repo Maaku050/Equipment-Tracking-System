@@ -16,6 +16,7 @@ export interface User {
   contactNumber?: string;
   status: UserStatus;
   imageUrl?: string;
+  imagePath: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -130,6 +131,7 @@ export const UsersProvider = ({ children }: { children: React.ReactNode }) => {
               contactNumber: data.contactNumber || "",
               status: (data.status as UserStatus) || "active",
               imageUrl: data.imageUrl || "",
+              imagePath: data.imagePath || "",
               createdAt: data.createdAt?.toDate?.() || new Date(),
               updatedAt: data.updatedAt?.toDate?.() || new Date(),
             };

@@ -20,7 +20,6 @@ import {
   FormControl,
   FormControlLabel,
   FormControlError,
-  FormControlHelper,
 } from "@/components/ui/form-control";
 import { Input, InputField } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -35,7 +34,12 @@ import {
   where,
   getDocs,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
 import { Edit, Package } from "lucide-react-native";
 
 interface User {
@@ -47,6 +51,7 @@ interface User {
   contactNumber: string;
   status: string;
   imageUrl: string;
+  imagePath?: string; // Add this
 }
 
 interface RecordItem {
@@ -242,19 +247,34 @@ export default function UserDetailsModal({
     }
   };
 
-  const uploadImage = async (uri: string, userId: string): Promise<string> => {
+  const uploadImage = async (
+    uri: string,
+    userId: string,
+  ): Promise<{ url: string; path: string }> => {
     try {
       const response = await fetch(uri);
       const blob = await response.blob();
 
-      const storageRef = ref(storage, `user-profiles/${userId}.jpg`);
+      const path = `user-profiles/${userId}.jpg`;
+      const storageRef = ref(storage, path);
       await uploadBytes(storageRef, blob);
 
       const downloadURL = await getDownloadURL(storageRef);
-      return downloadURL;
+      return { url: downloadURL, path };
     } catch (error) {
       console.error("Error uploading image:", error);
       throw error;
+    }
+  };
+
+  const deleteOldImage = async (imagePath: string) => {
+    try {
+      const imageRef = ref(storage, imagePath);
+      await deleteObject(imageRef);
+      console.log("Old image deleted successfully");
+    } catch (error) {
+      console.error("Error deleting old image:", error);
+      // Don't throw - continue even if delete fails
     }
   };
 
@@ -265,10 +285,19 @@ export default function UserDetailsModal({
       setLoading(true);
 
       let imageUrl = user.imageUrl;
+      let imagePath = user.imagePath;
 
       // Upload new image if changed
       if (imageUri && imageUri !== user.imageUrl) {
-        imageUrl = await uploadImage(imageUri, user.uid);
+        // Delete old image if path exists
+        if (user.imagePath) {
+          await deleteOldImage(user.imagePath);
+        }
+
+        // Upload new image
+        const uploadResult = await uploadImage(imageUri, user.uid);
+        imageUrl = uploadResult.url;
+        imagePath = uploadResult.path;
       }
 
       // Update Firestore
@@ -278,6 +307,7 @@ export default function UserDetailsModal({
         course,
         contactNumber,
         imageUrl,
+        imagePath, // Store the path
         updatedAt: new Date(),
       });
 

@@ -60,7 +60,7 @@ function isValidPhoneNumber(phone: string): boolean {
 async function uploadUserImage(
   imageBase64: string,
   uid: string,
-): Promise<string> {
+): Promise<{ url: string; path: string }> {
   try {
     // Convert base64 to buffer
     const imageBuffer = Buffer.from(imageBase64, "base64");
@@ -101,10 +101,26 @@ async function uploadUserImage(
     const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
 
     console.log(`✓ Image uploaded: ${publicUrl}`);
-    return publicUrl;
+    return { url: publicUrl, path: fileName };
   } catch (error) {
     console.error("❌ Error uploading image:", error);
     throw new Error("Failed to upload image");
+  }
+}
+
+/**
+ * Delete user image from Firebase Storage using path
+ */
+async function deleteUserImageByPath(imagePath: string): Promise<void> {
+  try {
+    const bucket = storage.bucket();
+    const file = bucket.file(imagePath);
+
+    await file.delete();
+    console.log(`✓ Deleted image: ${imagePath}`);
+  } catch (error) {
+    console.error("❌ Error deleting image:", error);
+    // Don't throw - we want to continue even if delete fails
   }
 }
 
@@ -167,6 +183,7 @@ async function saveUserToFirestore(
   course: string,
   contactNumber: string,
   imageUrl: string,
+  imagePath: string, // Add this parameter
 ): Promise<void> {
   try {
     const userData = {
@@ -178,6 +195,7 @@ async function saveUserToFirestore(
       contactNumber,
       status: "active",
       imageUrl,
+      imagePath, // Store the path
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     };
@@ -228,7 +246,7 @@ app.post("/createUser", async (req, res) => {
     const { email, password, name, role, course, contactNumber, imageBase64 } =
       req.body as CreateUserRequest;
 
-    // Validation
+    // Validation (keeping existing validation code)
     if (!email || !password || !name || !role || !course || !contactNumber) {
       console.log("❌ Missing required fields");
       res.status(400).json({
@@ -293,7 +311,6 @@ app.post("/createUser", async (req, res) => {
       });
       return;
     } catch (error: any) {
-      // If user doesn't exist, continue
       if (error.code !== "auth/user-not-found") {
         console.error("❌ Error checking existing user:", error);
         throw error;
@@ -307,13 +324,15 @@ app.post("/createUser", async (req, res) => {
 
     // Upload image if provided
     let imageUrl = "";
+    let imagePath = "";
     if (imageBase64) {
       console.log("Uploading user image...");
       try {
-        imageUrl = await uploadUserImage(imageBase64, uid);
+        const uploadResult = await uploadUserImage(imageBase64, uid);
+        imageUrl = uploadResult.url;
+        imagePath = uploadResult.path;
       } catch (error) {
         console.error("Failed to upload image, continuing without it");
-        // Continue without image if upload fails
       }
     }
 
@@ -326,6 +345,7 @@ app.post("/createUser", async (req, res) => {
       course,
       contactNumber,
       imageUrl,
+      imagePath, // Pass the path
     );
 
     console.log("Setting custom claims...");
@@ -343,6 +363,7 @@ app.post("/createUser", async (req, res) => {
         course,
         contactNumber,
         imageUrl,
+        imagePath,
         status: "active",
         createdAt: new Date().toISOString(),
       },
@@ -424,9 +445,12 @@ app.post("/createBulkUsers", async (req, res) => {
         const uid = await createAuthUser(user.email, user.password, user.name);
 
         let imageUrl = "";
+        let imagePath = "";
         if (user.imageBase64) {
           try {
-            imageUrl = await uploadUserImage(user.imageBase64, uid);
+            const uploadResult = await uploadUserImage(user.imageBase64, uid);
+            imageUrl = uploadResult.url;
+            imagePath = uploadResult.path;
           } catch (error) {
             console.error(
               `Failed to upload image for ${user.email}, continuing without it`,
@@ -442,6 +466,7 @@ app.post("/createBulkUsers", async (req, res) => {
           user.course,
           user.contactNumber,
           imageUrl,
+          imagePath, // Pass the path
         );
         await setUserClaims(uid, user.role);
 
@@ -527,11 +552,19 @@ app.patch("/updateUser/:uid", async (req, res) => {
     if (imageBase64) {
       console.log("Uploading new user image...");
       try {
-        // Delete old image first
-        await deleteUserImage(uid);
+        // Get current user data to find old image path
+        const userDoc = await db.collection("users").doc(uid).get();
+        const userData = userDoc.data();
+
+        // Delete old image using stored path (if exists)
+        if (userData?.imagePath) {
+          await deleteUserImageByPath(userData.imagePath);
+        }
+
         // Upload new image
-        const imageUrl = await uploadUserImage(imageBase64, uid);
-        updates.imageUrl = imageUrl;
+        const uploadResult = await uploadUserImage(imageBase64, uid);
+        updates.imageUrl = uploadResult.url;
+        updates.imagePath = uploadResult.path;
       } catch (error) {
         console.error("Failed to update image");
         throw new Error("Failed to update image");
@@ -565,11 +598,20 @@ app.delete("/deleteUser/:uid", async (req, res) => {
   try {
     const { uid } = req.params;
 
+    // Get user data to find image path
+    const userDoc = await db.collection("users").doc(uid).get();
+    const userData = userDoc.data();
+
     // Delete from Auth
     await auth.deleteUser(uid);
 
-    // Delete image from Storage
-    await deleteUserImage(uid);
+    // Delete image from Storage using stored path
+    if (userData?.imagePath) {
+      await deleteUserImageByPath(userData.imagePath);
+    } else {
+      // Fallback to old method if path not stored
+      await deleteUserImage(uid);
+    }
 
     // Delete from Firestore
     await db.collection("users").doc(uid).delete();
