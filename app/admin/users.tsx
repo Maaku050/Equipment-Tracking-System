@@ -1,8 +1,8 @@
 // admin/users.tsx
 import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
-import { Plus } from "lucide-react-native";
+import { Plus, Search } from "lucide-react-native";
 import React, { useState } from "react";
-import { Text, ScrollView, TouchableOpacity } from "react-native";
+import { Text, ScrollView, TouchableOpacity, View } from "react-native";
 import { Grid, GridItem } from "@/components/ui/grid";
 import { Card } from "@/components/ui/card";
 import { Image } from "@/components/ui/image";
@@ -13,10 +13,11 @@ import UserDetailsModal from "@/_modals/userDetailsModal";
 import { Fab, FabIcon, FabLabel } from "@/components/ui/fab";
 import { useUsers } from "@/context/UsersContext";
 import { Center } from "@/components/ui/center";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { db } from "@/firebase/firebaseConfig";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import AdminGuard from "@/components/AdminGuard";
+import { Input, InputField, InputIcon, InputSlot } from "@/components/ui/input";
 
 export default function UsersInterface() {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -24,9 +25,27 @@ export default function UsersInterface() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userFines, setUserFines] = useState<Record<string, number>>({});
   const [loadingFines, setLoadingFines] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Use the Users Context instead of local state
   const { users, loading, error, refreshUsers } = useUsers();
+
+  // Filter users based on search query
+  const filteredUsers = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return users;
+    }
+
+    const query = searchQuery.toLowerCase();
+    return users.filter((user) => {
+      return (
+        user.name?.toLowerCase().includes(query) ||
+        user.email?.toLowerCase().includes(query) ||
+        user.course?.toLowerCase().includes(query) ||
+        user.contactNumber?.toLowerCase().includes(query)
+      );
+    });
+  }, [users, searchQuery]);
 
   const handleCardPress = (user: any) => {
     setSelectedUser(user);
@@ -112,6 +131,20 @@ export default function UsersInterface() {
   return (
     <AdminGuard>
       <ScrollView style={{ padding: 15 }}>
+        {/* Search Bar */}
+        <View className="mb-4">
+          <Input variant="outline" size="md">
+            <InputSlot className="pl-3">
+              <InputIcon as={Search} />
+            </InputSlot>
+            <InputField
+              placeholder="Search by name, email, course, or contact..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+          </Input>
+        </View>
+
         {users.length === 0 ? (
           <Center className="flex-1 py-20">
             <Text className="text-typography-500 text-lg">No users found</Text>
@@ -124,6 +157,15 @@ export default function UsersInterface() {
               <ButtonText>Add First Student</ButtonText>
             </Button>
           </Center>
+        ) : filteredUsers.length === 0 ? (
+          <Center className="flex-1 py-20">
+            <Text className="text-typography-500 text-lg">
+              No users match your search
+            </Text>
+            <Text className="text-typography-400 text-sm mt-2">
+              Try a different search term
+            </Text>
+          </Center>
         ) : (
           <Grid
             className="gap-y-1 gap-x-1"
@@ -131,7 +173,7 @@ export default function UsersInterface() {
               className: "grid-cols-4",
             }}
           >
-            {users.map((user) => (
+            {filteredUsers.map((user) => (
               <GridItem
                 key={user.uid}
                 _extra={{
@@ -213,7 +255,7 @@ export default function UsersInterface() {
 
       <Fab
         size="sm"
-        placement="top right"
+        placement="bottom right"
         isHovered={false}
         isDisabled={false}
         isPressed={false}

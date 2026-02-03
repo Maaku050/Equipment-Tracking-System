@@ -9,8 +9,13 @@ import {
   View,
   Image,
   useWindowDimensions,
+  TouchableOpacity,
+  Alert,
 } from "react-native";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import {
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+} from "firebase/auth";
 import { auth, db } from "@/firebase/firebaseConfig";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { ButtonText, Button } from "@/components/ui/button";
@@ -18,7 +23,7 @@ import { Heading } from "@/components/ui/heading";
 import { Input, InputField } from "@/components/ui/input";
 import { VStack } from "@/components/ui/vstack";
 import { useRouter } from "expo-router";
-import { AlertCircle } from "lucide-react-native";
+import { AlertCircle, CheckCircle } from "lucide-react-native";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -27,6 +32,8 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
 
   // Responsive breakpoints
   const isMobile = dimensions.width < 768;
@@ -40,6 +47,7 @@ export default function LoginScreen() {
 
     setLoading(true);
     setError("");
+    setResetSuccess(false);
 
     try {
       // Sign in with Firebase Auth
@@ -101,6 +109,60 @@ export default function LoginScreen() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError("Please enter your email address first");
+      return;
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    setResetLoading(true);
+    setError("");
+    setResetSuccess(false);
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetSuccess(true);
+      setError("");
+
+      // Show alert for better UX
+      if (Platform.OS === "web") {
+        alert(
+          `Password reset email sent to ${email}. Please check your inbox.`,
+        );
+      } else {
+        Alert.alert(
+          "Email Sent",
+          `Password reset email sent to ${email}. Please check your inbox.`,
+          [{ text: "OK" }],
+        );
+      }
+    } catch (err: any) {
+      console.error("Password reset error:", err);
+      switch (err.code) {
+        case "auth/invalid-email":
+          setError("Invalid email address");
+          break;
+        case "auth/user-not-found":
+          setError("No account found with this email");
+          break;
+        case "auth/too-many-requests":
+          setError("Too many attempts. Please try again later");
+          break;
+        default:
+          setError("Failed to send reset email. Please try again.");
+      }
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -272,6 +334,36 @@ export default function LoginScreen() {
                 </Text>
               </VStack>
 
+              {/* Success Message */}
+              {resetSuccess && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    backgroundColor: "#d1fae5",
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    borderRadius: 10,
+                    marginBottom: 24,
+                    gap: 10,
+                    borderLeftWidth: 4,
+                    borderLeftColor: "#10b981",
+                  }}
+                >
+                  <CheckCircle size={20} color="#10b981" />
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 14,
+                      color: "#065f46",
+                      fontWeight: "500",
+                    }}
+                  >
+                    Password reset email sent! Check your inbox.
+                  </Text>
+                </View>
+              )}
+
               {/* Error Message */}
               {error && (
                 <View
@@ -335,15 +427,37 @@ export default function LoginScreen() {
                 </VStack>
 
                 <VStack style={{ gap: 8 }}>
-                  <Text
+                  <View
                     style={{
-                      fontSize: 14,
-                      fontWeight: "600",
-                      color: "#374151",
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
                     }}
                   >
-                    Password
-                  </Text>
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontWeight: "600",
+                        color: "#374151",
+                      }}
+                    >
+                      Password
+                    </Text>
+                    <TouchableOpacity
+                      onPress={handleForgotPassword}
+                      disabled={resetLoading}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: "600",
+                          color: resetLoading ? "#9ca3af" : "#0078d4",
+                        }}
+                      >
+                        {resetLoading ? "Sending..." : "Forgot Password?"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                   <Input
                     style={{
                       borderWidth: 2,

@@ -1,9 +1,9 @@
 // admin/inventory.tsx
 import { Box } from "@/components/ui/box";
 import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
-import { Plus } from "lucide-react-native";
-import React, { useState } from "react";
-import { Text, ScrollView, Pressable, StyleSheet } from "react-native";
+import { Plus, Search } from "lucide-react-native";
+import React, { useState, useMemo } from "react";
+import { Text, ScrollView, Pressable, StyleSheet, View } from "react-native";
 import { Grid, GridItem } from "@/components/ui/grid";
 import { Card } from "@/components/ui/card";
 import { Image } from "@/components/ui/image";
@@ -15,6 +15,7 @@ import EquipmentDetailsModal from "@/_modals/equipmentDetailsModal";
 import { useEquipment, Equipment } from "@/context/EquipmentContext";
 import { Fab, FabIcon, FabLabel } from "@/components/ui/fab";
 import AdminGuard from "@/components/AdminGuard";
+import { Input, InputField, InputIcon, InputSlot } from "@/components/ui/input";
 
 export default function EquipmentInterface() {
   const { equipment, loading, error } = useEquipment();
@@ -23,6 +24,24 @@ export default function EquipmentInterface() {
     null,
   );
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Filter equipment based on search query
+  const filteredEquipment = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return equipment;
+    }
+
+    const query = searchQuery.toLowerCase();
+    return equipment.filter((item) => {
+      return (
+        item.name?.toLowerCase().includes(query) ||
+        item.description?.toLowerCase().includes(query) ||
+        item.status?.toLowerCase().includes(query) ||
+        item.condition?.toLowerCase().includes(query)
+      );
+    });
+  }, [equipment, searchQuery]);
 
   const handleEquipmentClick = (item: Equipment) => {
     setSelectedEquipment(item);
@@ -69,6 +88,20 @@ export default function EquipmentInterface() {
         style={{ padding: 15 }}
         showsHorizontalScrollIndicator={false}
       >
+        {/* Search Bar */}
+        <View className="mb-4">
+          <Input variant="outline" size="md">
+            <InputSlot className="pl-3">
+              <InputIcon as={Search} />
+            </InputSlot>
+            <InputField
+              placeholder="Search by name, description, status, or condition..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+          </Input>
+        </View>
+
         {loading ? (
           <Box style={{ padding: 20, alignItems: "center" }}>
             <Spinner />
@@ -79,6 +112,15 @@ export default function EquipmentInterface() {
               No equipment found
             </Text>
           </Box>
+        ) : filteredEquipment.length === 0 ? (
+          <Box style={{ padding: 20, alignItems: "center" }}>
+            <Text style={{ fontSize: 16, color: "#666" }}>
+              No equipment matches your search
+            </Text>
+            <Text style={{ fontSize: 14, color: "#999", marginTop: 8 }}>
+              Try a different search term
+            </Text>
+          </Box>
         ) : (
           <Grid
             className="gap-y-1 gap-x-1"
@@ -86,7 +128,7 @@ export default function EquipmentInterface() {
               className: "grid-cols-4",
             }}
           >
-            {equipment.map((item) => (
+            {filteredEquipment.map((item) => (
               <GridItem
                 key={item.id}
                 _extra={{
@@ -162,7 +204,7 @@ export default function EquipmentInterface() {
 
       <Fab
         size="sm"
-        placement="top right"
+        placement="bottom right"
         isHovered={false}
         isDisabled={false}
         isPressed={false}
