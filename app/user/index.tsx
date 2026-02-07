@@ -1,4 +1,4 @@
-// app/user/index.tsx
+// app/user/index.tsx | User Interface
 import React, { useEffect, useState } from "react";
 import {
   StyleSheet,
@@ -28,8 +28,8 @@ import {
   CheckCircle,
   AlertTriangle,
   XCircle,
+  Calendar,
 } from "lucide-react-native";
-import { useOverdueChecker } from "@/hooks/useOverdueChecker";
 import { useUsers } from "@/context/UsersContext";
 import { signOut } from "firebase/auth";
 
@@ -38,6 +38,7 @@ type ExtendedStatus =
   | TransactionStatus
   | "Complete"
   | "Incomplete"
+  | "Incomplete and Ondue"
   | "Incomplete and Overdue";
 
 export default function StudentDashboard() {
@@ -63,8 +64,6 @@ export default function StudentDashboard() {
   const [filteredItems, setFilteredItems] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  const { checkOverdue } = useOverdueChecker(30, true);
-
   const filterButtons: {
     status: ExtendedStatus | "All";
     label: string;
@@ -74,11 +73,18 @@ export default function StudentDashboard() {
     { status: "All", label: "All", icon: Package, color: "#6b7280" },
     { status: "Request", label: "Pending", icon: Clock, color: "#f59e0b" },
     { status: "Ongoing", label: "Active", icon: AlertCircle, color: "#3b82f6" },
+    { status: "Ondue", label: "Due Today", icon: Calendar, color: "#f59e0b" },
     {
       status: "Incomplete",
       label: "Incomplete",
       icon: AlertTriangle,
       color: "#f97316",
+    },
+    {
+      status: "Incomplete and Ondue",
+      label: "Inc. Ondue",
+      icon: Calendar,
+      color: "#ea580c",
     },
     {
       status: "Incomplete and Overdue",
@@ -104,14 +110,11 @@ export default function StudentDashboard() {
     total: "#0400ff",
     pending: "#f59e0b",
     active: "#00aaff",
+    ondue: "#f59e0b",
     incomplete: "#ea580c",
     overdue: "#dc2626",
     completed: "#059669",
   };
-
-  useEffect(() => {
-    checkOverdue();
-  }, []);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -137,6 +140,15 @@ export default function StudentDashboard() {
       );
       filtered = userTransactions;
     }
+    // Handle "Incomplete and Ondue" status
+    else if (statusParam === "Incomplete and Ondue") {
+      const userTransactions = transactions.filter(
+        (transaction) =>
+          transaction.studentId === currentUser.uid &&
+          transaction.status === "Incomplete and Ondue",
+      );
+      filtered = userTransactions;
+    }
     // Handle "Incomplete and Overdue" status
     else if (statusParam === "Incomplete and Overdue") {
       const userTransactions = transactions.filter(
@@ -156,7 +168,7 @@ export default function StudentDashboard() {
       );
       filtered = [...userTransactions, ...userRecords];
     }
-    // Handle other transaction statuses (Request, Ongoing, Overdue)
+    // Handle other transaction statuses (Request, Ongoing, Ondue, Overdue)
     else {
       const allTransactions = getTransactionsByStatus(statusParam);
       const userTransactions = allTransactions.filter(
@@ -221,7 +233,8 @@ export default function StudentDashboard() {
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
-    await checkOverdue();
+    // The cloud function handles updates, so just wait a moment
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     setRefreshing(false);
   }, []);
 
@@ -236,6 +249,11 @@ export default function StudentDashboard() {
     active: transactions.filter(
       (t) => t.studentId === currentUser?.uid && t.status === "Ongoing",
     ).length,
+    ondue: transactions.filter(
+      (t) =>
+        t.studentId === currentUser?.uid &&
+        (t.status === "Ondue" || t.status === "Incomplete and Ondue"),
+    ).length,
     overdue: transactions.filter(
       (t) =>
         t.studentId === currentUser?.uid &&
@@ -244,7 +262,9 @@ export default function StudentDashboard() {
     incomplete: transactions.filter(
       (t) =>
         t.studentId === currentUser?.uid &&
-        (t.status === "Incomplete" || t.status === "Incomplete and Overdue"),
+        (t.status === "Incomplete" ||
+          t.status === "Incomplete and Ondue" ||
+          t.status === "Incomplete and Overdue"),
     ).length,
     completed: records.filter(
       (r) => r.studentId === currentUser?.uid && r.finalStatus === "Complete",
@@ -360,6 +380,23 @@ export default function StudentDashboard() {
                   {stats.active}
                 </Text>
                 <Text style={styles.statLabel}>Active</Text>
+              </Box>
+
+              <Box
+                style={{
+                  ...styles.statCard,
+                  borderLeftColor: STAT_COLORS.ondue,
+                }}
+              >
+                <Text
+                  style={{
+                    ...styles.statNumber,
+                    color: STAT_COLORS.ondue,
+                  }}
+                >
+                  {stats.ondue}
+                </Text>
+                <Text style={styles.statLabel}>Due Today</Text>
               </Box>
 
               <Box
@@ -541,7 +578,7 @@ const styles = StyleSheet.create({
   profileImage: {
     width: 150,
     height: 150,
-    borderRadius: "100%",
+    borderRadius: 100,
     borderWidth: 3,
     borderColor: "#ffffff",
   },
@@ -568,25 +605,18 @@ const styles = StyleSheet.create({
     paddingRight: 10,
   },
   statCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.18)", // clearer contrast on blue
-    borderRadius: 14, // slightly softer corners
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-
-    borderLeftWidth: 4, // stronger visual anchor
+    borderLeftWidth: 4,
     borderLeftColor: "#ffffff",
-
-    minWidth: 130, // improves readability
-
-    // Subtle elevation (native + web-safe)
+    minWidth: 130,
     shadowColor: "#000",
     shadowOpacity: 0.15,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
     elevation: 4,
-
-    // Web polish
-    backdropFilter: "blur(6px)", // ignored on native, fine on web
   },
   statNumber: {
     fontSize: 24,

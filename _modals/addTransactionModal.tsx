@@ -1,4 +1,4 @@
-// _modals/addTransactionModal.tsx
+// _modals/addTransactionModal.tsx | Admin Interface
 import React, { useEffect, useState } from "react";
 import {
   StyleSheet,
@@ -8,8 +8,20 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "@/firebase/firebaseConfig";
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  addDoc,
+  writeBatch,
+  doc,
+  getDoc,
+  serverTimestamp,
+  Timestamp,
+} from "firebase/firestore";
+import { db, functions } from "@/firebase/firebaseConfig";
+import { httpsCallable } from "firebase/functions";
 import {
   X,
   Plus,
@@ -35,7 +47,6 @@ import { Button, ButtonText } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input, InputField } from "@/components/ui/input";
 import DateTimePicker from "@/components/DateTimePicker";
-import { createTransaction } from "@/_helpers/firebaseHelpers";
 import { Image } from "@/components/ui/image";
 
 interface User {
@@ -233,23 +244,93 @@ export default function AddTransactionModal({
     try {
       setLoading(true);
 
-      // Use the createTransaction helper with isAdminCreated = true
-      await createTransaction(
-        selectedStudent.uid,
-        selectedStudent.name,
-        selectedStudent.email,
-        cart.map((item) => ({
-          equipmentId: item.equipmentId,
-          name: item.itemName,
-          quantity: item.quantity,
-          pricePerUnit: item.pricePerQuantity,
-        })),
-        true, // isAdminCreated - this will set status to "Ongoing"
-        dueDate,
+      // Prepare items
+      const items = cart.map((item) => ({
+        id: item.id,
+        equipmentId: item.equipmentId,
+        itemName: item.itemName,
+        quantity: item.quantity,
+        pricePerQuantity: item.pricePerQuantity,
+        returned: false,
+        returnedQuantity: 0,
+        damagedQuantity: 0,
+        lostQuantity: 0,
+        damageNotes: "",
+      }));
+
+      const totalPrice = items.reduce(
+        (sum, item) => sum + item.quantity * item.pricePerQuantity,
+        0,
       );
+
+      // Generate unique transaction ID
+      const now = new Date();
+      const dateStr = now.toISOString().split("T")[0].replace(/-/g, ""); // YYYYMMDD
+      const timeStr = now.getTime().toString().slice(-6); // Last 6 digits of timestamp
+      const transactionId = `TXN-${dateStr}-${timeStr}`;
+
+      // 1️⃣ Create transaction in Firestore
+      const transactionRef = await addDoc(collection(db, "transactions"), {
+        transactionId,
+        studentId: selectedStudent.uid,
+        studentName: selectedStudent.name,
+        studentEmail: selectedStudent.email,
+        items,
+        borrowedDate: serverTimestamp(),
+        dueDate: Timestamp.fromDate(dueDate),
+        status: "Ongoing", // Admin-created transactions start as "Ongoing"
+        totalPrice,
+        fineAmount: 0,
+        // 🔔 REQUIRED notification flags
+        ondueNotified: false,
+        reminderNotified: false,
+        overdueNotified: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      console.log(`Transaction created: ${transactionRef.id}`);
+
+      // 2️⃣ Update equipment quantities
+      const batch = writeBatch(db);
+      for (const item of items) {
+        const equipmentRef = doc(db, "equipment", item.equipmentId);
+        const equipmentSnap = await getDoc(equipmentRef);
+
+        if (equipmentSnap.exists()) {
+          const equipmentData = equipmentSnap.data();
+          batch.update(equipmentRef, {
+            availableQuantity:
+              (equipmentData?.availableQuantity || 0) - item.quantity,
+            borrowedQuantity:
+              (equipmentData?.borrowedQuantity || 0) + item.quantity,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+      await batch.commit();
+
+      // 3️⃣ Call maintenance function
+      try {
+        const manualMaintenance = httpsCallable(
+          functions,
+          "manualTransactionMaintenance",
+        );
+        await manualMaintenance({});
+        console.log("Maintenance check completed after transaction creation");
+      } catch (maintenanceError) {
+        console.warn(
+          "Maintenance check failed (non-critical):",
+          maintenanceError,
+        );
+        // Don't block the success flow even if maintenance fails
+      }
+
       resetModal();
       onSuccess();
       onClose();
+
+      Alert.alert("Success", "Transaction created successfully!");
     } catch (error) {
       console.error("Error creating transaction:", error);
       Alert.alert("Error", "Failed to create transaction");
@@ -555,7 +636,7 @@ function EquipmentCard({
   return (
     <Box style={styles.equipmentCard}>
       <HStack style={{ justifyContent: "space-between" }}>
-        <HStack>
+        <HStack space="md">
           <Image
             source={{
               uri:
@@ -567,9 +648,6 @@ function EquipmentCard({
           />
           <VStack style={styles.equipmentInfo}>
             <Text style={styles.equipmentName}>{equipment.name}</Text>
-            <Text style={styles.equipmentDescription}>
-              {equipment.description}
-            </Text>
             <Text style={styles.equipmentAvailable}>
               Available: {equipment.availableQuantity}/{equipment.totalQuantity}
             </Text>

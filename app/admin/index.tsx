@@ -1,4 +1,4 @@
-// app/admin/index.tsx
+// app/admin/index.tsx | Admin Interface
 import React, { useEffect, useState } from "react";
 import {
   StyleSheet,
@@ -27,6 +27,7 @@ import { useTransaction } from "@/context/TransactionContext";
 import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
 import { Plus, Search, X } from "lucide-react-native";
 import AdminGuard from "@/components/AdminGuard";
+import Pagination from "@/components/customPagination";
 
 export default function AdminDashboard() {
   const params = useLocalSearchParams();
@@ -43,10 +44,15 @@ export default function AdminDashboard() {
   const [searchTransactionId, setSearchTransactionId] = useState("");
   const [searchUserName, setSearchUserName] = useState("");
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const transactionsPerPage = 15;
+
   const filterButtons: (TransactionStatus | "All")[] = [
     "All",
     "Request",
     "Ongoing",
+    "Ondue",
     "Incomplete",
     "Overdue",
     "Incomplete and Overdue",
@@ -73,6 +79,8 @@ export default function AdminDashboard() {
     }
 
     setFilteredTransactions(filtered);
+    // Reset to first page when filters change
+    setCurrentPage(1);
   }, [statusParam, transactions, searchTransactionId, searchUserName]);
 
   // Handle errors
@@ -130,6 +138,21 @@ export default function AdminDashboard() {
     // Modal will close automatically, context will auto-update via snapshot
   };
 
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  // Calculate pagination
+  const totalPages = Math.ceil(
+    filteredTransactions.length / transactionsPerPage,
+  );
+  const indexOfLastTransaction = currentPage * transactionsPerPage;
+  const indexOfFirstTransaction = indexOfLastTransaction - transactionsPerPage;
+  const currentTransactions = filteredTransactions.slice(
+    indexOfFirstTransaction,
+    indexOfLastTransaction,
+  );
+
   if (error) {
     return (
       <Box style={styles.centerContainer}>
@@ -153,6 +176,10 @@ export default function AdminDashboard() {
           <Box style={styles.statCard}>
             <Text style={styles.statNumberOngoing}>{stats.ongoing}</Text>
             <Text style={styles.statLabel}>Ongoing</Text>
+          </Box>
+          <Box style={styles.statCard}>
+            <Text style={styles.statNumberOndue}>{stats.ondue}</Text>
+            <Text style={styles.statLabel}>Ondue</Text>
           </Box>
           <Box style={styles.statCard}>
             <Text style={styles.statNumberIncomplete}>{stats.incomplete}</Text>
@@ -255,11 +282,20 @@ export default function AdminDashboard() {
             </Text>
           )}
           <TransactionAccordion
-            transactions={filteredTransactions}
+            transactions={currentTransactions}
             onComplete={handleCompleteTransaction}
             onDelete={handleDeleteTransaction}
             loading={loading}
           />
+
+          {/* Pagination Component */}
+          {filteredTransactions.length > 0 && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={handlePageChange}
+            />
+          )}
         </Box>
 
         {/* Add Transaction Modal */}
@@ -333,12 +369,17 @@ const styles = StyleSheet.create({
   statNumberRequest: {
     fontSize: 28,
     fontWeight: "bold",
-    color: "#3b82f6",
+    color: "#f59e0b",
   },
   statNumberOngoing: {
     fontSize: 28,
     fontWeight: "bold",
-    color: "#10b981",
+    color: "#3b82f6",
+  },
+  statNumberOndue: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#f59e0b",
   },
   statNumberIncomplete: {
     fontSize: 28,

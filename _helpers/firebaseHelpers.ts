@@ -14,7 +14,8 @@ import {
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { db } from "@/firebase/firebaseConfig";
+import { db, functions } from "@/firebase/firebaseConfig";
+import { httpsCallable } from "firebase/functions";
 
 // ============================================
 // TYPE DEFINITIONS
@@ -36,8 +37,10 @@ export interface BorrowedItem {
 export type TransactionStatus =
   | "Request"
   | "Ongoing"
+  | "Ondue"
   | "Overdue"
   | "Incomplete"
+  | "Incomplete and Ondue"
   | "Incomplete and Overdue"
   | "Complete"
   | "Complete and Overdue"
@@ -56,6 +59,11 @@ export interface Transaction {
   fineAmount: number;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+
+  // 🔔 Notification flags
+  ondueNotified?: boolean;
+  reminderNotified?: boolean;
+  overdueNotified?: boolean;
 }
 
 export interface Equipment {
@@ -98,7 +106,13 @@ export const determineTransactionStatus = (
   currentStatus: TransactionStatus,
 ): TransactionStatus => {
   const now = new Date();
-  const isOverdue = now > dueDate;
+  now.setHours(0, 0, 0, 0); // Normalize to start of day
+
+  const dueDateNormalized = new Date(dueDate);
+  dueDateNormalized.setHours(0, 0, 0, 0);
+
+  const isOverdue = now > dueDateNormalized;
+  const isOndue = now.getTime() === dueDateNormalized.getTime();
 
   // Check if all items are fully returned
   const allReturned = items.every(
@@ -120,9 +134,23 @@ export const determineTransactionStatus = (
   if (allReturned) {
     return isOverdue ? "Complete and Overdue" : "Complete";
   } else if (someReturned || items.some((item) => item.returnedQuantity > 0)) {
-    return isOverdue ? "Incomplete and Overdue" : "Incomplete";
+    // Incomplete scenarios
+    if (isOverdue) {
+      return "Incomplete and Overdue";
+    } else if (isOndue) {
+      return "Incomplete and Ondue";
+    } else {
+      return "Incomplete";
+    }
   } else {
-    return isOverdue ? "Overdue" : "Ongoing";
+    // No items returned
+    if (isOverdue) {
+      return "Overdue";
+    } else if (isOndue) {
+      return "Ondue";
+    } else {
+      return "Ongoing";
+    }
   }
 };
 
@@ -138,14 +166,22 @@ export const calculateOverdueFine = (
   currentDate: Date = new Date(),
   finePerDay: number = 10,
 ): number => {
-  // If not overdue, no fine
-  if (currentDate < dueDate) {
+  // Normalize dates to start of day for comparison
+  const currentNormalized = new Date(currentDate);
+  currentNormalized.setHours(0, 0, 0, 0);
+
+  const dueNormalized = new Date(dueDate);
+  dueNormalized.setHours(0, 0, 0, 0);
+
+  // If not overdue (or is ondue), no fine
+  if (currentNormalized <= dueNormalized) {
     return 0;
   }
 
   // Calculate days overdue (rounded up to include partial days)
   const millisecondsPerDay = 1000 * 60 * 60 * 24;
-  const diffInMilliseconds = currentDate.getTime() - dueDate.getTime();
+  const diffInMilliseconds =
+    currentNormalized.getTime() - dueNormalized.getTime();
   const daysOverdue = Math.ceil(diffInMilliseconds / millisecondsPerDay);
 
   // Calculate total fine
@@ -228,7 +264,9 @@ export const updateOverdueTransactionsOptimized = async () => {
       transactionsRef,
       where("status", "in", [
         "Ongoing",
+        "Ondue",
         "Incomplete",
+        "Incomplete and Ondue",
         "Overdue",
         "Incomplete and Overdue",
       ]),
@@ -424,11 +462,8 @@ export const createTransaction = async (
       0,
     );
 
-    // const dueDate = new Date();
-    // dueDate.setDate(dueDate.getDate() + 7);
-
     const transactionData: Transaction = {
-      transactionId, // Add the generated transaction ID
+      transactionId,
       studentId,
       studentName,
       studentEmail,
@@ -438,6 +473,12 @@ export const createTransaction = async (
       status: isAdminCreated ? "Ongoing" : "Request",
       totalPrice,
       fineAmount: 0,
+
+      // 🔔 Notification flags (REQUIRED)
+      ondueNotified: false,
+      reminderNotified: false,
+      overdueNotified: false,
+
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     };
@@ -447,7 +488,7 @@ export const createTransaction = async (
       transactionData,
     );
 
-    // Update equipment quantities (reserve for both Request and Ongoing)
+    // Update equipment quantities
     for (const equipment of selectedEquipment) {
       const equipmentRef = doc(db, "equipment", equipment.equipmentId);
       const equipmentSnap = await getDoc(equipmentRef);
@@ -463,6 +504,23 @@ export const createTransaction = async (
     }
 
     await batch.commit();
+
+    // 🔔 Call maintenance function (non-blocking)
+    try {
+      const manualMaintenance = httpsCallable(
+        functions,
+        "manualTransactionMaintenance",
+      );
+      await manualMaintenance({});
+      console.log("Maintenance check completed after transaction creation");
+    } catch (maintenanceError) {
+      console.warn(
+        "Maintenance check failed (non-critical):",
+        maintenanceError,
+      );
+      // Don't block the success flow even if maintenance fails
+    }
+
     return { id: transactionRef.id, transactionId };
   } catch (error) {
     console.error("Error creating transaction:", error);
@@ -479,19 +537,21 @@ export const approveTransaction = async (transactionId: string) => {
 
     const transaction = snap.data() as Transaction;
 
-    // Update transaction
+    // 1️⃣ Update transaction status to "Ongoing" and reset notification flags
     await updateDoc(transactionRef, {
       status: "Ongoing",
-      borrowedDate: Timestamp.now(),
-      updatedAt: Timestamp.now(),
+      borrowedDate: serverTimestamp(),
+      ondueNotified: false,
+      reminderNotified: false,
+      overdueNotified: false,
+      updatedAt: serverTimestamp(),
     });
 
-    // Build equipment list
+    // 2️⃣ Send approval notification
     const equipmentList = transaction.items
       .map((i) => `<li>${i.itemName} (Qty: ${i.quantity})</li>`)
       .join("");
 
-    // Create notification
     const notificationRef = doc(collection(db, "notifications"));
     await setDoc(notificationRef, {
       to: transaction.studentEmail,
@@ -531,6 +591,22 @@ Thank you!`,
       transactionId,
       createdAt: serverTimestamp(),
     });
+
+    // 3️⃣ Call maintenance function (non-blocking)
+    try {
+      const manualMaintenance = httpsCallable(
+        functions,
+        "manualTransactionMaintenance",
+      );
+      await manualMaintenance({});
+      console.log("Maintenance check completed after approval");
+    } catch (maintenanceError) {
+      console.warn(
+        "Maintenance check failed (non-critical):",
+        maintenanceError,
+      );
+      // Don't block the success flow even if maintenance fails
+    }
   } catch (error) {
     console.error("Error approving transaction:", error);
     throw error;
@@ -547,7 +623,7 @@ export const denyTransaction = async (transactionId: string) => {
     const transaction = snap.data() as Transaction;
     const batch = writeBatch(db);
 
-    // Return quantities to equipment
+    // 1️⃣ Return equipment quantities
     for (const item of transaction.items) {
       const equipmentRef = doc(db, "equipment", item.equipmentId);
       const equipmentSnap = await getDoc(equipmentRef);
@@ -563,7 +639,7 @@ export const denyTransaction = async (transactionId: string) => {
       }
     }
 
-    // Create notification
+    // 2️⃣ Send denial notification
     const equipmentList = transaction.items
       .map((i) => `<li>${i.itemName} (Qty: ${i.quantity})</li>`)
       .join("");
@@ -608,6 +684,7 @@ Thank you.`,
       createdAt: serverTimestamp(),
     });
 
+    // 3️⃣ Delete transaction
     batch.delete(transactionRef);
     await batch.commit();
   } catch (error) {
@@ -649,7 +726,6 @@ export const completeTransaction = async (
     const transactionData = transactionSnap.data() as Transaction;
     const batch = writeBatch(db);
 
-    // Update items with return status
     const updatedItems = transactionData.items.map((item) => ({
       ...item,
       returned: itemReturnStates[item.id]?.checked || item.returned,
@@ -657,38 +733,31 @@ export const completeTransaction = async (
         itemReturnStates[item.id]?.quantity || item.returnedQuantity,
     }));
 
-    // Check if all items are fully returned
     const allReturned = updatedItems.every(
       (item) => item.returned && item.returnedQuantity === item.quantity,
     );
 
-    // Check if overdue
     const now = new Date();
     const dueDate = transactionData.dueDate.toDate();
     const isOverdue = now > dueDate;
 
-    // Calculate fine if overdue
     let fineAmount = 0;
     if (isOverdue) {
       const daysOverdue = Math.ceil(
         (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
       );
-      fineAmount = daysOverdue * 10; // ₱10 per day overdue
+      fineAmount = daysOverdue * 10;
     }
 
-    // Determine final status based on completion and overdue state
     let finalStatus: string;
 
     if (allReturned) {
-      // All items returned
       finalStatus = isOverdue ? "Complete and Overdue" : "Complete";
     } else {
-      // Some items not returned
       finalStatus = isOverdue ? "Incomplete and Overdue" : "Incomplete";
     }
 
     if (allReturned) {
-      // Move to records collection - transaction is complete
       const recordData = {
         transactionId: transactionData.transactionId || transactionId,
         studentId: transactionData.studentId,
@@ -710,7 +779,6 @@ export const completeTransaction = async (
       await addDoc(collection(db, "records"), recordData);
       batch.delete(transactionRef);
 
-      // Create fine document if overdue
       if (isOverdue && fineAmount > 0) {
         const fineData = {
           transactionId: transactionData.transactionId || transactionId,
@@ -730,8 +798,6 @@ export const completeTransaction = async (
         await addDoc(collection(db, "fines"), fineData);
       }
     } else {
-      // Partial return - update transaction with new status
-      // Determine current transaction status
       let transactionStatus: string;
 
       if (isOverdue) {
@@ -748,7 +814,6 @@ export const completeTransaction = async (
       });
     }
 
-    // Update equipment quantities for returned items
     for (const item of updatedItems) {
       const originalItem = transactionData.items.find((i) => i.id === item.id);
       const quantityReturned =
@@ -788,7 +853,6 @@ export const deleteTransaction = async (transactionId: string) => {
       const transactionData = transactionSnap.data() as Transaction;
       const batch = writeBatch(db);
 
-      // Return quantities to equipment
       for (const item of transactionData.items) {
         const equipmentRef = doc(db, "equipment", item.equipmentId);
         const equipmentSnap = await getDoc(equipmentRef);

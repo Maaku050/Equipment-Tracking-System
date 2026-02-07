@@ -1,8 +1,7 @@
 // functions/src/index.ts
-import * as functions from "firebase-functions/v2";
 import * as admin from "firebase-admin";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { onCall } from "firebase-functions/v2/https";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -14,8 +13,10 @@ const db = admin.firestore();
 type TransactionStatus =
   | "Request"
   | "Ongoing"
-  | "Incomplete"
+  | "Ondue"
   | "Overdue"
+  | "Incomplete"
+  | "Incomplete and Ondue"
   | "Incomplete and Overdue"
   | "Complete"
   | "Complete and Overdue";
@@ -45,6 +46,11 @@ interface Transaction {
   fineAmount?: number;
   createdAt: admin.firestore.Timestamp;
   updatedAt: admin.firestore.Timestamp;
+
+  // 🔔 Notification flags
+  ondueNotified?: boolean;
+  reminderNotified?: boolean;
+  overdueNotified?: boolean;
 }
 
 const determineTransactionStatus = (
@@ -52,8 +58,15 @@ const determineTransactionStatus = (
   dueDate: Date,
   currentStatus: TransactionStatus,
 ): TransactionStatus => {
-  const now = new Date();
-  const isOverdue = now > dueDate;
+  const now = getManilaToday();
+
+  const dueDateNormalized = new Date(
+    dueDate.toLocaleString("en-US", { timeZone: "Asia/Manila" }),
+  );
+  dueDateNormalized.setHours(0, 0, 0, 0);
+
+  const isOverdue = now > dueDateNormalized;
+  const isOndue = now.getTime() === dueDateNormalized.getTime();
 
   const allReturned = items.every(
     (item) => item.returned && item.returnedQuantity === item.quantity,
@@ -64,17 +77,21 @@ const determineTransactionStatus = (
       item.returnedQuantity > 0 && item.returnedQuantity < item.quantity,
   );
 
-  if (currentStatus === "Request") {
-    return "Request";
-  }
+  if (currentStatus === "Request") return "Request";
 
   if (allReturned) {
     return isOverdue ? "Complete and Overdue" : "Complete";
-  } else if (someReturned || items.some((item) => item.returnedQuantity > 0)) {
-    return isOverdue ? "Incomplete and Overdue" : "Incomplete";
-  } else {
-    return isOverdue ? "Overdue" : "Ongoing";
   }
+
+  if (someReturned) {
+    if (isOverdue) return "Incomplete and Overdue";
+    if (isOndue) return "Incomplete and Ondue";
+    return "Incomplete";
+  }
+
+  if (isOverdue) return "Overdue";
+  if (isOndue) return "Ondue";
+  return "Ongoing";
 };
 
 const calculateOverdueFine = (
@@ -82,16 +99,35 @@ const calculateOverdueFine = (
   currentDate = new Date(),
   finePerDay = 10,
 ): number => {
-  if (currentDate < dueDate) {
+  // Normalize dates to start of day
+  const currentNormalized = new Date(currentDate);
+  currentNormalized.setHours(0, 0, 0, 0);
+
+  const dueNormalized = new Date(dueDate);
+  dueNormalized.setHours(0, 0, 0, 0);
+
+  if (currentNormalized <= dueNormalized) {
     return 0;
   }
 
   const millisecondsPerDay = 1000 * 60 * 60 * 24;
-  const diffInMilliseconds = currentDate.getTime() - dueDate.getTime();
+  const diffInMilliseconds =
+    currentNormalized.getTime() - dueNormalized.getTime();
   const daysOverdue = Math.ceil(diffInMilliseconds / millisecondsPerDay);
 
   return daysOverdue * finePerDay;
 };
+
+function getManilaToday(): Date {
+  const now = new Date();
+
+  const manila = new Date(
+    now.toLocaleString("en-US", { timeZone: "Asia/Manila" }),
+  );
+
+  manila.setHours(0, 0, 0, 0);
+  return manila;
+}
 
 // ============================================
 // VALIDATION HELPER
@@ -121,11 +157,13 @@ export const dailyTransactionMaintenance = onSchedule(
       const overdueCount = await updateOverdueTransactions();
       const reminderCount = await sendReturnReminders();
       const overdueNoticeCount = await sendOverdueNotices();
+      const ondueNoticeCount = await sendOndueNotices();
 
       console.log(`Daily maintenance complete:
         - Updated ${overdueCount} overdue transactions
         - Sent ${reminderCount} return reminders
-        - Sent ${overdueNoticeCount} overdue notices`);
+        - Sent ${overdueNoticeCount} overdue notices
+        - Sent ${ondueNoticeCount} ondue notices`);
     } catch (error) {
       console.error("Error in daily maintenance:", error);
       throw error;
@@ -144,7 +182,9 @@ async function updateOverdueTransactions(): Promise<number> {
     const snapshot = await transactionsRef
       .where("status", "in", [
         "Ongoing",
+        "Ondue",
         "Incomplete",
+        "Incomplete and Ondue",
         "Overdue",
         "Incomplete and Overdue",
       ])
@@ -205,6 +245,119 @@ async function updateOverdueTransactions(): Promise<number> {
 }
 
 // ============================================
+// HELPER: Send Ondue Notices (Due Today)
+// ============================================
+
+async function sendOndueNotices(): Promise<number> {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const transactionsRef = db.collection("transactions");
+    const snapshot = await transactionsRef
+      .where("dueDate", ">=", admin.firestore.Timestamp.fromDate(today))
+      .where("dueDate", "<", admin.firestore.Timestamp.fromDate(tomorrow))
+      .where("ondueNotified", "!=", true)
+      .get();
+
+    const batch = db.batch();
+    let noticeCount = 0;
+    let skippedCount = 0;
+
+    for (const docSnap of snapshot.docs) {
+      const transaction = docSnap.data() as Transaction;
+
+      if (!hasRequiredFields(transaction)) {
+        console.warn(
+          `Skipping transaction ${docSnap.id}: Missing student information`,
+        );
+        skippedCount++;
+        continue;
+      }
+
+      if (transaction.ondueNotified === true) {
+        skippedCount++;
+        continue;
+      }
+
+      const equipmentList = transaction.items
+        .map((item) => `<li>${item.itemName} (Qty: ${item.quantity})</li>`)
+        .join("");
+
+      const notificationRef = db.collection("notifications").doc();
+
+      batch.set(notificationRef, {
+        to: transaction.studentEmail,
+        message: {
+          subject: "📅 Equipment Due Today - Return Required",
+          text: `Hi ${transaction.studentName},\n\nThis is a reminder that your borrowed equipment is DUE TODAY:\n\n${transaction.items.map((item) => `- ${item.itemName} (Qty: ${item.quantity})`).join("\n")}\n\nTransaction ID: ${docSnap.id}\n\nPlease return the equipment today to avoid penalties (₱10/day starting tomorrow).\n\nThank you!`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #fffbeb;">
+              <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-top: 4px solid #f59e0b;">
+                <h2 style="color: #f59e0b; margin-top: 0;">📅 Equipment Due Today</h2>
+                
+                <p>Hi <strong>${transaction.studentName}</strong>,</p>
+                
+                <p>This is a reminder that your borrowed equipment is <strong style="color: #d97706;">DUE TODAY</strong>:</p>
+                
+                <ul style="background-color: #fef3c7; padding: 15px 15px 15px 35px; border-radius: 4px; margin: 15px 0; border-left: 3px solid #f59e0b;">
+                  ${equipmentList}
+                </ul>
+                
+                <table style="width: 100%; margin: 20px 0; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><strong>Transaction ID:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-family: monospace;">${docSnap.id}</td>
+                  </tr>
+                </table>
+                
+                <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0;">
+                  <p style="margin: 0; color: #92400e;">
+                    <strong>⏰ Important:</strong> Please return the equipment today to avoid penalties (₱10/day starting tomorrow).
+                  </p>
+                </div>
+                
+                <p>Thank you for your cooperation!</p>
+                
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                
+                <p style="font-size: 12px; color: #6b7280; margin: 0;">
+                  This is an automated message from eLabTrack System. Please do not reply to this email.
+                </p>
+              </div>
+            </div>
+          `,
+        },
+        userId: transaction.studentId,
+        type: "ondue_notice",
+        transactionId: docSnap.id,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      batch.update(docSnap.ref, {
+        ondueNotified: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      noticeCount++;
+    }
+
+    if (noticeCount > 0) {
+      await batch.commit();
+    }
+
+    console.log(`Sent ${noticeCount} ondue notices, skipped ${skippedCount}`);
+    return noticeCount;
+  } catch (error) {
+    console.error("Error sending ondue notices:", error);
+    throw error;
+  }
+}
+
+// ============================================
 // HELPER: Send Return Reminders (Due Tomorrow)
 // ============================================
 
@@ -231,11 +384,15 @@ async function sendReturnReminders(): Promise<number> {
     for (const docSnap of snapshot.docs) {
       const transaction = docSnap.data() as Transaction;
 
-      // Skip if missing required fields
       if (!hasRequiredFields(transaction)) {
         console.warn(
           `Skipping transaction ${docSnap.id}: Missing student information`,
         );
+        skippedCount++;
+        continue;
+      }
+
+      if (transaction.reminderNotified === true) {
         skippedCount++;
         continue;
       }
@@ -251,9 +408,7 @@ async function sendReturnReminders(): Promise<number> {
         day: "numeric",
       });
 
-      // Trigger Email Extension format
       batch.set(notificationRef, {
-        // Required by Trigger Email extension
         to: transaction.studentEmail,
         message: {
           subject: "⏰ Equipment Return Reminder - Due Tomorrow",
@@ -299,12 +454,15 @@ async function sendReturnReminders(): Promise<number> {
             </div>
           `,
         },
-
-        // Custom tracking fields (optional, for your records)
         userId: transaction.studentId,
         type: "return_reminder",
         transactionId: docSnap.id,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      batch.update(docSnap.ref, {
+        reminderNotified: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
       reminderCount++;
@@ -343,11 +501,15 @@ async function sendOverdueNotices(): Promise<number> {
     for (const docSnap of snapshot.docs) {
       const transaction = docSnap.data() as Transaction;
 
-      // Skip if missing required fields
       if (!hasRequiredFields(transaction)) {
         console.warn(
           `Skipping transaction ${docSnap.id}: Missing student information`,
         );
+        skippedCount++;
+        continue;
+      }
+
+      if (transaction.overdueNotified === true) {
         skippedCount++;
         continue;
       }
@@ -372,9 +534,7 @@ async function sendOverdueNotices(): Promise<number> {
         day: "numeric",
       });
 
-      // Trigger Email Extension format
       batch.set(notificationRef, {
-        // Required by Trigger Email extension
         to: transaction.studentEmail,
         message: {
           subject: "⚠️ OVERDUE: Equipment Return Required",
@@ -433,12 +593,15 @@ async function sendOverdueNotices(): Promise<number> {
             </div>
           `,
         },
-
-        // Custom tracking fields (optional, for your records)
         userId: transaction.studentId,
         type: "overdue_notice",
         transactionId: docSnap.id,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      batch.update(docSnap.ref, {
+        overdueNotified: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
       noticeCount++;
@@ -457,40 +620,53 @@ async function sendOverdueNotices(): Promise<number> {
 }
 
 // ============================================
-// SIMPLE TEST FUNCTION
+// CALLABLE FUNCTIONS
 // ============================================
 
-export const testFunction = onCall(async (_request) => {
-  console.log("Test function called");
-  return {
-    message: "Function is working!",
-    timestamp: new Date().toISOString(),
-  };
-});
-
-// ============================================
-// MANUAL TRIGGER (Optional - for testing)
-// ============================================
-
-export const manualTransactionMaintenance = onCall(async (_request) => {
-  console.log("Manual maintenance triggered");
-
-  try {
-    const overdueCount = await updateOverdueTransactions();
-    const reminderCount = await sendReturnReminders();
-    const overdueNoticeCount = await sendOverdueNotices();
-
+export const testFunction = onCall(
+  {
+    region: "asia-southeast1",
+  },
+  async () => {
+    console.log("Test function called");
     return {
-      success: true,
-      overdueCount,
-      reminderCount,
-      overdueNoticeCount,
+      message: "Function is working!",
+      timestamp: new Date().toISOString(),
     };
-  } catch (error: any) {
-    console.error("Error in manual maintenance:", error);
-    throw new functions.https.HttpsError(
-      "internal",
-      `Maintenance failed: ${error.message}`,
-    );
-  }
-});
+  },
+);
+
+// ============================================
+// MANUAL TRIGGER (for testing and after transaction creation)
+// ============================================
+
+export const manualTransactionMaintenance = onCall(
+  {
+    region: "asia-southeast1",
+  },
+  async ({ auth }) => {
+    if (!auth) {
+      throw new HttpsError("unauthenticated", "Login required");
+    }
+
+    console.log("Manual maintenance triggered by user:", auth.uid);
+
+    try {
+      const overdueCount = await updateOverdueTransactions();
+      const reminderCount = await sendReturnReminders();
+      const overdueNoticeCount = await sendOverdueNotices();
+      const ondueNoticeCount = await sendOndueNotices();
+
+      return {
+        success: true,
+        overdueCount,
+        reminderCount,
+        overdueNoticeCount,
+        ondueNoticeCount,
+      };
+    } catch (error: any) {
+      console.error("Error in manual maintenance:", error);
+      throw new HttpsError("internal", `Maintenance failed: ${error.message}`);
+    }
+  },
+);

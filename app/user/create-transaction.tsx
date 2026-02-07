@@ -1,5 +1,5 @@
-// app/user/create-transaction.tsx
-import React, { useState, useEffect } from "react";
+// app/user/create-transaction.tsx | User Interface
+import React, { useState, useEffect, useCallback } from "react";
 import {
   StyleSheet,
   ScrollView,
@@ -8,9 +8,21 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
-import { router } from "expo-router";
-import { auth, db } from "@/firebase/firebaseConfig";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { router, useFocusEffect } from "expo-router";
+import { auth, db, functions } from "@/firebase/firebaseConfig";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+  writeBatch,
+  doc,
+  getDoc,
+  serverTimestamp,
+  Timestamp,
+} from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import { Box } from "@/components/ui/box";
 import { VStack } from "@/components/ui/vstack";
 import { HStack } from "@/components/ui/hstack";
@@ -27,9 +39,6 @@ import {
 import { useUsers } from "@/context/UsersContext";
 import { Image } from "@/components/ui/image";
 import DateTimePicker from "@/components/DateTimePicker";
-import { createTransaction } from "@/_helpers/firebaseHelpers";
-import { useFocusEffect } from "expo-router";
-import { useCallback } from "react";
 
 interface Equipment {
   id: string;
@@ -101,7 +110,7 @@ export default function CreateTransactionScreen() {
   useFocusEffect(
     useCallback(() => {
       resetScreenState();
-      loadEquipment(); // optional but recommended to refresh availability
+      loadEquipment();
 
       return () => {
         // no cleanup needed
@@ -204,25 +213,97 @@ export default function CreateTransactionScreen() {
     setLoading(true);
 
     try {
-      // Use the createTransaction helper with isAdminCreated = false (creates "Request")
-      await createTransaction(
-        currentUser.uid,
-        studentData.name,
-        studentData.email,
-        cart.map((item) => ({
-          equipmentId: item.equipmentId,
-          name: item.itemName,
-          quantity: item.quantity,
-          pricePerUnit: item.pricePerQuantity,
-        })),
-        false, // isAdminCreated - this will set status to "Request"
-        dueDate,
+      // Prepare items
+      const items = cart.map((item) => ({
+        id: item.id,
+        equipmentId: item.equipmentId,
+        itemName: item.itemName,
+        quantity: item.quantity,
+        pricePerQuantity: item.pricePerQuantity,
+        returned: false,
+        returnedQuantity: 0,
+        damagedQuantity: 0,
+        lostQuantity: 0,
+        damageNotes: "",
+      }));
+
+      const totalPrice = items.reduce(
+        (sum, item) => sum + item.quantity * item.pricePerQuantity,
+        0,
+      );
+
+      // Generate unique transaction ID
+      const now = new Date();
+      const dateStr = now.toISOString().split("T")[0].replace(/-/g, ""); // YYYYMMDD
+      const timeStr = now.getTime().toString().slice(-6); // Last 6 digits of timestamp
+      const transactionId = `TXN-${dateStr}-${timeStr}`;
+
+      // 1️⃣ Create transaction in Firestore
+      const transactionRef = await addDoc(collection(db, "transactions"), {
+        transactionId,
+        studentId: currentUser.uid,
+        studentName: studentData.name,
+        studentEmail: studentData.email,
+        items,
+        borrowedDate: serverTimestamp(),
+        dueDate: Timestamp.fromDate(dueDate),
+        status: "Request", // User-created transactions start as "Request"
+        totalPrice,
+        fineAmount: 0,
+        // 🔔 REQUIRED notification flags
+        ondueNotified: false,
+        reminderNotified: false,
+        overdueNotified: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      console.log(`Transaction created: ${transactionRef.id}`);
+
+      // 2️⃣ Update equipment quantities
+      const batch = writeBatch(db);
+      for (const item of items) {
+        const equipmentRef = doc(db, "equipment", item.equipmentId);
+        const equipmentSnap = await getDoc(equipmentRef);
+
+        if (equipmentSnap.exists()) {
+          const equipmentData = equipmentSnap.data();
+          batch.update(equipmentRef, {
+            availableQuantity:
+              (equipmentData?.availableQuantity || 0) - item.quantity,
+            borrowedQuantity:
+              (equipmentData?.borrowedQuantity || 0) + item.quantity,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+      await batch.commit();
+
+      // 3️⃣ Call maintenance function (non-blocking)
+      try {
+        const manualMaintenance = httpsCallable(
+          functions,
+          "manualTransactionMaintenance",
+        );
+        await manualMaintenance({});
+        console.log("Maintenance check completed after transaction creation");
+      } catch (maintenanceError) {
+        console.warn(
+          "Maintenance check failed (non-critical):",
+          maintenanceError,
+        );
+        // Don't block the success flow even if maintenance fails
+      }
+
+      Alert.alert(
+        "Success",
+        "Transaction request submitted successfully! Wait for admin approval.",
       );
 
       router.back();
     } catch (error) {
       console.error("Error creating transaction:", error);
-      Alert.alert("Error", "Failed to create transaction");
+      Alert.alert("Error", "Failed to create transaction request");
     } finally {
       setLoading(false);
     }
@@ -420,9 +501,6 @@ function EquipmentCard({
         />
         <VStack style={{ flex: 1 }}>
           <Text style={styles.equipmentName}>{equipment.name}</Text>
-          <Text style={styles.equipmentDescription} numberOfLines={2}>
-            {equipment.description}
-          </Text>
           <Text style={styles.equipmentAvailable}>
             Available: {equipment.availableQuantity}/{equipment.totalQuantity}
           </Text>

@@ -54,6 +54,7 @@ import {
   Clock,
   AlertCircle,
   CheckCircle,
+  Calendar,
 } from "lucide-react-native";
 
 interface Transaction {
@@ -86,6 +87,8 @@ interface TransactionAccordionProps {
   isUserView?: boolean; // New prop to distinguish user view from admin view
 }
 
+type ConfirmActionType = "delete" | "approve" | "deny" | "complete";
+
 export default function TransactionAccordion({
   transactions,
   onComplete,
@@ -103,6 +106,57 @@ export default function TransactionAccordion({
   const [itemReturnStates, setItemReturnStates] = useState<{
     [key: string]: { checked: boolean; quantity: number };
   }>({});
+
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmActionType | null>(
+    null,
+  );
+  const [confirmTransaction, setConfirmTransaction] =
+    useState<Transaction | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+
+  const openConfirmModal = (
+    action: ConfirmActionType,
+    transaction: Transaction,
+  ) => {
+    setConfirmAction(action);
+    setConfirmTransaction(transaction);
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmAction || !confirmTransaction) return;
+
+    try {
+      setConfirmLoading(true);
+
+      switch (confirmAction) {
+        case "delete":
+          await deleteTransaction(confirmTransaction.id);
+          break;
+
+        case "approve":
+          await approveTransaction(confirmTransaction.id);
+          break;
+
+        case "deny":
+          await denyTransaction(confirmTransaction.id);
+          break;
+
+        case "complete":
+          openCompleteModal(confirmTransaction);
+          break;
+      }
+
+      setShowConfirmModal(false);
+    } catch (error) {
+      Alert.alert("Error", "Action failed. Please try again.");
+    } finally {
+      setConfirmLoading(false);
+      setConfirmAction(null);
+      setConfirmTransaction(null);
+    }
+  };
 
   const formatDate = (date: Date) => {
     return date.toLocaleDateString("en-US", {
@@ -255,10 +309,14 @@ export default function TransactionAccordion({
         return "#f59e0b";
       case "Ongoing":
         return "#3b82f6";
+      case "Ondue":
+        return "#f59e0b"; // Amber/Orange to indicate urgency but not yet overdue
       case "Overdue":
         return "#ef4444";
       case "Incomplete":
         return "#f97316";
+      case "Incomplete and Ondue":
+        return "#ea580c"; // Slightly darker orange for incomplete + ondue
       case "Incomplete and Overdue":
         return "#dc2626";
       case "Complete":
@@ -274,6 +332,16 @@ export default function TransactionAccordion({
       case "Request":
         return Clock;
       case "Ongoing":
+        return AlertCircle;
+      case "Ondue":
+        return Calendar; // Calendar icon for "due today"
+      case "Overdue":
+        return AlertCircle;
+      case "Incomplete":
+        return AlertCircle;
+      case "Incomplete and Ondue":
+        return Calendar;
+      case "Incomplete and Overdue":
         return AlertCircle;
       case "Complete":
         return CheckCircle;
@@ -505,6 +573,12 @@ export default function TransactionAccordion({
                           {formatDate(transaction.dueDate)} to avoid penalties.
                         </Text>
                       )}
+                      {displayStatus === "Ondue" && (
+                        <Text style={[styles.infoText, { color: "#d97706" }]}>
+                          📅 Equipment is DUE TODAY! Please return it before
+                          midnight to avoid penalties.
+                        </Text>
+                      )}
                       {displayStatus === "Overdue" && (
                         <Text style={[styles.infoText, { color: "#ef4444" }]}>
                           ⚠️ This transaction is overdue. Please return the
@@ -515,6 +589,12 @@ export default function TransactionAccordion({
                         <Text style={[styles.infoText, { color: "#f97316" }]}>
                           ⚠️ Some items are still pending return. Please return
                           all equipment.
+                        </Text>
+                      )}
+                      {displayStatus === "Incomplete and Ondue" && (
+                        <Text style={[styles.infoText, { color: "#ea580c" }]}>
+                          ⚠️ Some items are still pending return and are DUE
+                          TODAY! Please return them before midnight.
                         </Text>
                       )}
                       {displayStatus === "Incomplete and Overdue" && (
@@ -545,13 +625,17 @@ export default function TransactionAccordion({
                         <HStack style={styles.actionButtons}>
                           <Button
                             style={styles.denyButton}
-                            onPress={() => denyTransaction(transaction.id)}
+                            onPress={() =>
+                              openConfirmModal("deny", transaction)
+                            }
                           >
                             <ButtonText>Deny</ButtonText>
                           </Button>
                           <Button
                             style={styles.approveButton}
-                            onPress={() => approveTransaction(transaction.id)}
+                            onPress={() =>
+                              openConfirmModal("approve", transaction)
+                            }
                           >
                             <ButtonText>Approve</ButtonText>
                           </Button>
@@ -561,7 +645,9 @@ export default function TransactionAccordion({
                           {onDelete && (
                             <Button
                               style={styles.deleteButton}
-                              onPress={() => deleteTransaction(transaction.id)}
+                              onPress={() =>
+                                openConfirmModal("delete", transaction)
+                              }
                             >
                               <ButtonText>Delete</ButtonText>
                             </Button>
@@ -757,6 +843,64 @@ export default function TransactionAccordion({
           </ModalContent>
         </Modal>
       )}
+
+      <Modal
+        isOpen={showConfirmModal}
+        onClose={() => !confirmLoading && setShowConfirmModal(false)}
+        size="md"
+      >
+        <ModalBackdrop />
+        <ModalContent>
+          <ModalHeader>
+            <Heading size="md">Confirm Action</Heading>
+            <ModalCloseButton disabled={confirmLoading}>
+              <Icon as={CloseIcon} />
+            </ModalCloseButton>
+          </ModalHeader>
+
+          <ModalBody>
+            <Text style={{ fontSize: 14, color: "#374151" }}>
+              Are you sure you want to{" "}
+              <Text style={{ fontWeight: "700" }}>{confirmAction}</Text> this
+              transaction?
+            </Text>
+
+            <Text style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+              Transaction ID: {confirmTransaction?.transactionId}
+            </Text>
+          </ModalBody>
+
+          <ModalFooter>
+            <HStack style={{ gap: 12 }}>
+              <Button
+                style={{ flex: 1, backgroundColor: "#6b7280" }}
+                onPress={() => setShowConfirmModal(false)}
+                isDisabled={confirmLoading}
+              >
+                <ButtonText>Cancel</ButtonText>
+              </Button>
+
+              <Button
+                style={{
+                  flex: 1,
+                  backgroundColor:
+                    confirmAction === "delete" || confirmAction === "deny"
+                      ? "#ef4444"
+                      : "#10b981",
+                }}
+                onPress={handleConfirmAction}
+                isDisabled={confirmLoading}
+              >
+                {confirmLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <ButtonText>Confirm</ButtonText>
+                )}
+              </Button>
+            </HStack>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </>
   );
 }

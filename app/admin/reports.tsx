@@ -1,5 +1,4 @@
-// admin/reports.tsx
-
+// app/admin/reports.tsx | Reports Interface with Multiple Charts
 import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
@@ -31,7 +30,12 @@ import {
 import { useRecords, RecordStatus } from "@/context/RecordsContext";
 import DateTimePicker from "@/components/DateTimePicker";
 import { HStack } from "@/components/ui/hstack";
-import { LineChart } from "react-native-chart-kit";
+import {
+  LineChart,
+  BarChart,
+  PieChart,
+  ProgressChart,
+} from "react-native-chart-kit";
 import { Dimensions } from "react-native";
 import AdminGuard from "@/components/AdminGuard";
 
@@ -40,6 +44,17 @@ interface FilterState {
   startDate: Date | null;
   endDate: Date | null;
 }
+
+type ChartView =
+  | "equipment-usage"
+  | "borrowing-trends"
+  | "return-status"
+  | "top-borrowers"
+  | "fine-revenue"
+  | "peak-days"
+  | "avg-duration"
+  | "overdue-rate"
+  | "records";
 
 export default function RecordsReport() {
   const {
@@ -59,12 +74,24 @@ export default function RecordsReport() {
     startDate: null,
     endDate: null,
   });
-  const [viewMode, setViewMode] = useState<"report" | "records">("report");
+  const [currentView, setCurrentView] = useState<ChartView>("equipment-usage");
 
   const statusOptions: RecordStatus[] = [
     "Complete",
     "Incomplete",
     "Complete and Overdue",
+  ];
+
+  const chartTabs = [
+    { id: "equipment-usage", label: "📊 Equipment Usage", icon: "📊" },
+    { id: "borrowing-trends", label: "📈 Borrowing Trends", icon: "📈" },
+    { id: "return-status", label: "🔄 Return Status", icon: "🔄" },
+    { id: "top-borrowers", label: "👥 Top Borrowers", icon: "👥" },
+    { id: "fine-revenue", label: "💰 Fine Revenue", icon: "💰" },
+    { id: "peak-days", label: "📅 Peak Days", icon: "📅" },
+    { id: "avg-duration", label: "⏱️ Avg Duration", icon: "⏱️" },
+    { id: "overdue-rate", label: "⚠️ Overdue Rate", icon: "⚠️" },
+    { id: "records", label: "📋 Records List", icon: "📋" },
   ];
 
   useEffect(() => {
@@ -74,25 +101,20 @@ export default function RecordsReport() {
   const applyFilters = () => {
     let filtered = [...records];
 
-    // Apply search filter
     if (searchQuery.trim()) {
       filtered = searchRecords(searchQuery);
     }
 
-    // Apply status filter
     if (filters.status.length > 0) {
       filtered = filtered.filter((record) =>
         filters.status.includes(record.finalStatus),
       );
     }
 
-    // Apply date range filter
     if (filters.startDate && filters.endDate) {
       const startDate = new Date(filters.startDate);
       const endDate = new Date(filters.endDate);
       const dateFiltered = getRecordsByDateRange(startDate, endDate);
-
-      // Intersect with current filtered results
       filtered = filtered.filter((record) =>
         dateFiltered.some((dr) => dr.id === record.id),
       );
@@ -129,17 +151,12 @@ export default function RecordsReport() {
 
   const handlePrint = () => {
     if (Platform.OS === "web") {
-      // Create print content
       const printContent = generatePrintHTML();
-
-      // Open print window
       const printWindow = window.open("", "_blank");
       if (printWindow) {
         printWindow.document.write(printContent);
         printWindow.document.close();
         printWindow.focus();
-
-        // Wait for content to load then print
         setTimeout(() => {
           printWindow.print();
           printWindow.close();
@@ -327,35 +344,438 @@ export default function RecordsReport() {
   const hasActiveFilters =
     filters.status.length > 0 || filters.startDate || filters.endDate;
 
+  const screenWidth = Dimensions.get("window").width;
+
+  // Helper function
+  const truncateName = (name: string, maxLength: number = 10) => {
+    return name.length > maxLength
+      ? name.substring(0, maxLength) + "..."
+      : name;
+  };
+
+  // ============================================
+  // CHART DATA PROCESSING FUNCTIONS
+  // ============================================
+
   const aggregateEquipmentUsage = (records: any[]) => {
     const map: Record<string, { name: string; count: number }> = {};
-
     records.forEach((record) => {
       record.items.forEach((item: any) => {
         if (!map[item.equipmentId]) {
-          map[item.equipmentId] = {
-            name: item.itemName,
-            count: 0,
-          };
+          map[item.equipmentId] = { name: item.itemName, count: 0 };
         }
         map[item.equipmentId].count += item.quantity;
       });
     });
-
     return Object.values(map);
   };
 
-  const screenWidth = Dimensions.get("window").width;
+  const getBorrowingTrendsData = () => {
+    const monthlyData: Record<string, number> = {};
+    filteredRecords.forEach((record) => {
+      const month = formatDate(record.borrowedDate);
+      monthlyData[month] = (monthlyData[month] || 0) + 1;
+    });
+    const labels = Object.keys(monthlyData).slice(-6);
+    const data = labels.map((label) => monthlyData[label]);
+    return { labels, data };
+  };
 
-  const usageData = aggregateEquipmentUsage(filteredRecords);
+  const getReturnStatusData = () => {
+    const complete = filteredRecords.filter(
+      (r) => r.finalStatus === "Complete",
+    ).length;
+    const incomplete = filteredRecords.filter(
+      (r) => r.finalStatus === "Incomplete",
+    ).length;
+    const completeAndOverdue = filteredRecords.filter(
+      (r) => r.finalStatus === "Complete and Overdue",
+    ).length;
+    const incompleteAndOverdue = filteredRecords.filter(
+      (r) => r.finalStatus === "Incomplete and Overdue",
+    ).length;
 
-  const chartData = {
-    labels: usageData.map((u) => u.name),
-    datasets: [
+    return [
       {
-        data: usageData.map((u) => u.count),
+        name: "Complete",
+        population: complete,
+        color: "#10b981",
+        legendFontColor: "#374151",
+        legendFontSize: 11,
       },
-    ],
+      {
+        name: "Incomplete",
+        population: incomplete,
+        color: "#f97316",
+        legendFontColor: "#374151",
+        legendFontSize: 11,
+      },
+      {
+        name: "Complete & Overdue",
+        population: completeAndOverdue,
+        color: "#f59e0b",
+        legendFontColor: "#374151",
+        legendFontSize: 11,
+      },
+      {
+        name: "Incomplete & Overdue",
+        population: incompleteAndOverdue,
+        color: "#ef4444",
+        legendFontColor: "#374151",
+        legendFontSize: 11,
+      },
+    ].filter((item) => item.population > 0);
+  };
+
+  const getTopBorrowersData = () => {
+    const borrowerMap: Record<string, number> = {};
+    filteredRecords.forEach((record) => {
+      const name = record.studentName;
+      borrowerMap[name] = (borrowerMap[name] || 0) + 1;
+    });
+    const topBorrowers = Object.entries(borrowerMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+    const labels = topBorrowers.map(([name]) => name.split(" ")[0]);
+    const data = topBorrowers.map(([, count]) => count);
+    return { labels, data, fullNames: topBorrowers };
+  };
+
+  const getFineRevenueData = () => {
+    const monthlyFines: Record<string, number> = {};
+    filteredRecords.forEach((record) => {
+      if (record.fineAmount > 0) {
+        const month = formatDate(record.completedDate);
+        monthlyFines[month] = (monthlyFines[month] || 0) + record.fineAmount;
+      }
+    });
+    const labels = Object.keys(monthlyFines).slice(-6);
+    const data = labels.map((label) => monthlyFines[label]);
+    return { labels, data: data.length > 0 ? data : [0] };
+  };
+
+  const getPeakDaysData = () => {
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const dayCounts = [0, 0, 0, 0, 0, 0, 0];
+    filteredRecords.forEach((record) => {
+      const day = record.borrowedDate.getDay();
+      dayCounts[day]++;
+    });
+    return { labels: dayNames, data: dayCounts };
+  };
+
+  const getAverageDurationData = () => {
+    const durationMap: Record<
+      string,
+      { name: string; totalDuration: number; count: number }
+    > = {};
+    filteredRecords.forEach((record) => {
+      if (record.returnedDate) {
+        record.items.forEach((item: any) => {
+          const duration = Math.ceil(
+            (record.returnedDate.getTime() - record.borrowedDate.getTime()) /
+              (1000 * 60 * 60 * 24),
+          );
+          if (!durationMap[item.equipmentId]) {
+            durationMap[item.equipmentId] = {
+              name: item.itemName,
+              totalDuration: 0,
+              count: 0,
+            };
+          }
+          durationMap[item.equipmentId].totalDuration += duration;
+          durationMap[item.equipmentId].count += 1;
+        });
+      }
+    });
+    const averages = Object.values(durationMap)
+      .map((item) => ({
+        name: item.name.substring(0, 12),
+        avgDuration: item.totalDuration / item.count,
+      }))
+      .sort((a, b) => b.avgDuration - a.avgDuration)
+      .slice(0, 8);
+    const labels = averages.map((a) => a.name);
+    const data = averages.map((a) => Math.round(a.avgDuration));
+    return {
+      labels: labels.length > 0 ? labels : ["No Data"],
+      data: data.length > 0 ? data : [0],
+    };
+  };
+
+  const getOverdueRateData = () => {
+    const equipmentOverdue: Record<
+      string,
+      { name: string; total: number; overdue: number }
+    > = {};
+    filteredRecords.forEach((record) => {
+      const isOverdue = record.finalStatus.includes("Overdue");
+      record.items.forEach((item: any) => {
+        if (!equipmentOverdue[item.equipmentId]) {
+          equipmentOverdue[item.equipmentId] = {
+            name: item.itemName,
+            total: 0,
+            overdue: 0,
+          };
+        }
+        equipmentOverdue[item.equipmentId].total++;
+        if (isOverdue) {
+          equipmentOverdue[item.equipmentId].overdue++;
+        }
+      });
+    });
+    const overdueRates = Object.values(equipmentOverdue)
+      .map((item) => ({
+        name: item.name.substring(0, 12),
+        rate: (item.overdue / item.total) * 100,
+      }))
+      .filter((item) => item.rate > 0)
+      .sort((a, b) => b.rate - a.rate)
+      .slice(0, 8);
+    const labels = overdueRates.map((r) => r.name);
+    const data = overdueRates.map((r) => Math.round(r.rate));
+    return {
+      labels: labels.length > 0 ? labels : ["No Data"],
+      data: data.length > 0 ? data : [0],
+    };
+  };
+
+  // ============================================
+  // RENDER CHART BASED ON CURRENT VIEW
+  // ============================================
+
+  const renderChart = () => {
+    const chartConfig = {
+      backgroundGradientFrom: "#ffffff",
+      backgroundGradientTo: "#ffffff",
+      decimalPlaces: 0,
+      color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+      labelColor: () => "#374151",
+      propsForLabels: { fontSize: 10 },
+    };
+
+    switch (currentView) {
+      case "equipment-usage": {
+        const usageData = aggregateEquipmentUsage(filteredRecords);
+        const chartData = {
+          labels: usageData.map((u) => truncateName(u.name)),
+          datasets: [{ data: usageData.map((u) => u.count) }],
+        };
+        return (
+          <View>
+            <Text style={styles.chartTitle}>Equipment Usage Report</Text>
+            {usageData.length === 0 ? (
+              <Text style={styles.noDataText}>No usage data available.</Text>
+            ) : (
+              <>
+                <ScrollView horizontal>
+                  <LineChart
+                    data={chartData}
+                    width={Math.max(screenWidth - 32, usageData.length * 100)}
+                    height={280}
+                    fromZero
+                    yAxisLabel=""
+                    chartConfig={chartConfig}
+                    bezier
+                    style={styles.chart}
+                  />
+                </ScrollView>
+                <View style={styles.legendContainer}>
+                  <Text style={styles.legendTitle}>Equipment Details</Text>
+                  <View style={styles.legendGrid}>
+                    {usageData.map((equipment) => (
+                      <View key={equipment.name} style={styles.legendItem}>
+                        <Text style={styles.legendItemName}>
+                          {equipment.name}
+                        </Text>
+                        <Text style={styles.legendItemCount}>
+                          Used: {equipment.count} times
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </>
+            )}
+          </View>
+        );
+      }
+
+      case "borrowing-trends": {
+        const { labels, data } = getBorrowingTrendsData();
+        const chartData = { labels, datasets: [{ data }] };
+        return (
+          <View>
+            <Text style={styles.chartTitle}>
+              Borrowing Trends (Last 6 Months)
+            </Text>
+            <ScrollView horizontal>
+              <BarChart
+                data={chartData}
+                width={Math.max(screenWidth - 32, labels.length * 80)}
+                height={220}
+                fromZero
+                yAxisLabel=""
+                chartConfig={chartConfig}
+                style={styles.chart}
+              />
+            </ScrollView>
+          </View>
+        );
+      }
+
+      case "return-status": {
+        const pieData = getReturnStatusData();
+        return (
+          <View>
+            <Text style={styles.chartTitle}>Return Status Distribution</Text>
+            <PieChart
+              data={pieData}
+              width={screenWidth - 32}
+              height={220}
+              chartConfig={chartConfig}
+              accessor="population"
+              backgroundColor="transparent"
+              paddingLeft="15"
+              absolute
+            />
+          </View>
+        );
+      }
+
+      case "top-borrowers": {
+        const { labels, data, fullNames } = getTopBorrowersData();
+        const chartData = { labels, datasets: [{ data }] };
+        return (
+          <View>
+            <Text style={styles.chartTitle}>Top 10 Borrowers</Text>
+            <ScrollView horizontal>
+              <BarChart
+                data={chartData}
+                width={Math.max(screenWidth - 32, labels.length * 60)}
+                height={220}
+                fromZero
+                yAxisLabel=""
+                chartConfig={{
+                  ...chartConfig,
+                  color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+                }}
+                style={styles.chart}
+              />
+            </ScrollView>
+            <View style={styles.borrowerList}>
+              {fullNames.map(([name, count], index) => (
+                <View key={name} style={styles.borrowerItem}>
+                  <Text style={styles.borrowerName}>
+                    {index + 1}. {name}
+                  </Text>
+                  <Text style={styles.borrowerCount}>{count} transactions</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        );
+      }
+
+      case "fine-revenue": {
+        const { labels, data } = getFineRevenueData();
+        const chartData = { labels, datasets: [{ data }] };
+        return (
+          <View>
+            <Text style={styles.chartTitle}>Fine Revenue (Last 6 Months)</Text>
+            <BarChart
+              data={chartData}
+              width={screenWidth - 32}
+              height={220}
+              fromZero
+              yAxisLabel="₱"
+              chartConfig={{
+                ...chartConfig,
+                color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
+              }}
+              style={styles.chart}
+            />
+          </View>
+        );
+      }
+
+      case "peak-days": {
+        const { labels, data } = getPeakDaysData();
+        const chartData = { labels, datasets: [{ data }] };
+        return (
+          <View>
+            <Text style={styles.chartTitle}>Peak Borrowing Days</Text>
+            <BarChart
+              data={chartData}
+              width={screenWidth - 32}
+              height={220}
+              fromZero
+              yAxisLabel=""
+              chartConfig={{
+                ...chartConfig,
+                color: (opacity = 1) => `rgba(236, 72, 153, ${opacity})`,
+              }}
+              style={styles.chart}
+            />
+          </View>
+        );
+      }
+
+      case "avg-duration": {
+        const { labels, data } = getAverageDurationData();
+        const chartData = { labels, datasets: [{ data }] };
+        return (
+          <View>
+            <Text style={styles.chartTitle}>
+              Average Borrowing Duration (Days)
+            </Text>
+            <ScrollView horizontal>
+              <BarChart
+                data={chartData}
+                width={Math.max(screenWidth - 32, labels.length * 70)}
+                height={220}
+                fromZero
+                yAxisLabel=""
+                yAxisSuffix="d"
+                chartConfig={{
+                  ...chartConfig,
+                  color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
+                }}
+                style={styles.chart}
+              />
+            </ScrollView>
+          </View>
+        );
+      }
+
+      case "overdue-rate": {
+        const { labels, data } = getOverdueRateData();
+        const chartData = { labels, datasets: [{ data }] };
+        return (
+          <View>
+            <Text style={styles.chartTitle}>Overdue Rate by Equipment (%)</Text>
+            <ScrollView horizontal>
+              <BarChart
+                data={chartData}
+                width={Math.max(screenWidth - 32, labels.length * 70)}
+                height={220}
+                fromZero
+                yAxisLabel=""
+                yAxisSuffix="%"
+                chartConfig={{
+                  ...chartConfig,
+                  color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
+                }}
+                style={styles.chart}
+              />
+            </ScrollView>
+          </View>
+        );
+      }
+
+      case "records":
+        return null; // Records list rendered separately
+    }
   };
 
   if (loading) {
@@ -513,222 +933,135 @@ export default function RecordsReport() {
           </View>
         </View>
 
-        <View
-          style={{
-            flexDirection: "row",
-            paddingLeft: 16,
-            paddingRight: 16,
-            marginTop: 8,
-          }}
-        >
-          <TouchableOpacity
-            onPress={() => setViewMode("report")}
-            style={{
-              flex: 1,
-              padding: 10,
-              borderRadius: 8,
-              backgroundColor: viewMode === "report" ? "#3b82f6" : "#e5e7eb",
-              marginRight: 6,
-              alignItems: "center",
-            }}
-          >
-            <Text
-              style={{
-                color: viewMode === "report" ? "#fff" : "#374151",
-                fontWeight: "600",
-              }}
-            >
-              📊 Equipment Usage Report
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => setViewMode("records")}
-            style={{
-              flex: 1,
-              padding: 10,
-              borderRadius: 8,
-              backgroundColor: viewMode === "records" ? "#3b82f6" : "#e5e7eb",
-              marginLeft: 6,
-              alignItems: "center",
-            }}
-          >
-            <Text
-              style={{
-                color: viewMode === "records" ? "#fff" : "#374151",
-                fontWeight: "600",
-              }}
-            >
-              📋 Records List
-            </Text>
-          </TouchableOpacity>
+        {/* Chart Navigation Tabs */}
+        <View style={styles.tabsContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.tabsRow}>
+              {chartTabs.map((tab) => (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={[
+                    styles.tab,
+                    currentView === tab.id && styles.tabActive,
+                  ]}
+                  onPress={() => setCurrentView(tab.id as ChartView)}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      currentView === tab.id && styles.tabTextActive,
+                    ]}
+                  >
+                    {tab.icon} {tab.label.replace(/^[^\s]+\s/, "")}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
         </View>
 
-        {viewMode === "report" ? (
-          <>
-            {/* 📊 Equipment Usage Report */}
-            <View
-              style={{
-                padding: 16,
-                backgroundColor: "#fff",
-                borderBottomWidth: 1,
-                borderColor: "#e5e7eb",
-              }}
-            >
-              <Text
-                style={{ fontSize: 16, fontWeight: "600", marginBottom: 12 }}
-              >
-                Equipment Usage Report
-              </Text>
-
-              {usageData.length === 0 ? (
-                <Text style={{ color: "#6b7280" }}>
-                  No usage data available.
-                </Text>
-              ) : (
-                <ScrollView horizontal>
-                  <LineChart
-                    data={chartData}
-                    width={Math.max(screenWidth, usageData.length * 80)}
-                    height={280}
-                    fromZero
-                    yAxisLabel=""
-                    chartConfig={{
-                      backgroundGradientFrom: "#ffffff",
-                      backgroundGradientTo: "#ffffff",
-                      decimalPlaces: 0,
-                      color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-                      labelColor: () => "#374151",
-                      propsForDots: {
-                        r: "4",
-                        strokeWidth: "2",
-                        stroke: "#2563eb",
-                      },
-                      propsForBackgroundLines: {
-                        strokeDasharray: "",
-                      },
-                    }}
-                    bezier
-                    style={{ borderRadius: 12 }}
-                  />
-                </ScrollView>
-              )}
-            </View>
-          </>
-        ) : null}
-
-        {viewMode === "records" ? (
-          <>
-            {/* Records List */}
-            <ScrollView style={styles.recordsList}>
+        {/* Chart or Records Display */}
+        <ScrollView style={styles.contentContainer}>
+          {currentView === "records" ? (
+            <View style={styles.cardsContainer}>
               {filteredRecords.length === 0 ? (
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>No records found</Text>
                 </View>
               ) : (
-                <View style={styles.cardsContainer}>
-                  {filteredRecords.map((record) => (
-                    <View key={record.id} style={styles.recordCard}>
-                      {/* Card Header */}
-                      <View style={styles.cardHeader}>
-                        <View style={styles.headerLeft}>
-                          <View style={styles.nameStatusRow}>
-                            <Text style={styles.studentName}>
-                              {record.studentName}
+                filteredRecords.map((record) => (
+                  <View key={record.id} style={styles.recordCard}>
+                    <View style={styles.cardHeader}>
+                      <View style={styles.headerLeft}>
+                        <View style={styles.nameStatusRow}>
+                          <Text style={styles.studentName}>
+                            {record.studentName}
+                          </Text>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              {
+                                backgroundColor: getStatusColor(
+                                  record.finalStatus,
+                                ),
+                              },
+                            ]}
+                          >
+                            <Text style={styles.statusText}>
+                              {record.finalStatus}
                             </Text>
-                            <View
-                              style={[
-                                styles.statusBadge,
-                                {
-                                  backgroundColor: getStatusColor(
-                                    record.finalStatus,
-                                  ),
-                                },
-                              ]}
-                            >
-                              <Text style={styles.statusText}>
-                                {record.finalStatus}
-                              </Text>
-                            </View>
                           </View>
-                          <Text style={styles.studentEmail}>
-                            {record.studentEmail}
-                          </Text>
-                          <Text style={styles.transactionId}>
-                            {record.transactionId}
-                          </Text>
                         </View>
-                        <View style={styles.headerRight}>
-                          <Text style={styles.dateLabel}>Borrowed:</Text>
-                          <Text style={styles.dateValue}>
-                            {formatDate(record.borrowedDate)}
-                          </Text>
-                          <Text style={styles.dateLabel}>Completed:</Text>
-                          <Text style={styles.dateValue}>
-                            {formatDateTime(record.completedDate)}
-                          </Text>
-                        </View>
+                        <Text style={styles.studentEmail}>
+                          {record.studentEmail}
+                        </Text>
+                        <Text style={styles.transactionId}>
+                          {record.transactionId}
+                        </Text>
                       </View>
-
-                      {/* Items List */}
-                      <View style={styles.itemsSection}>
-                        {record.items.map((item) => (
-                          <View key={item.id} style={styles.itemRow}>
-                            <View style={styles.itemLeft}>
-                              <Text style={styles.itemName}>
-                                {item.itemName}
-                              </Text>
-                              <Text style={styles.itemDetails}>
-                                Qty: {item.quantity} | ₱{item.pricePerQuantity}{" "}
-                                each
-                              </Text>
-                              <Text style={styles.returnedInfo}>
-                                Returned: {item.returnedQuantity}/
-                                {item.quantity}
-                              </Text>
-                            </View>
-                            <Text style={styles.itemPrice}>
-                              ₱
-                              {(item.pricePerQuantity * item.quantity).toFixed(
-                                2,
-                              )}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-
-                      {/* Summary */}
-                      <View style={styles.summarySection}>
-                        <View style={styles.summaryRow}>
-                          <Text style={styles.summaryLabel}>Total:</Text>
-                          <Text style={styles.totalPrice}>
-                            ₱{record.totalPrice.toFixed(2)}
-                          </Text>
-                        </View>
-                        {record.fineAmount > 0 && (
-                          <View style={styles.summaryRow}>
-                            <Text style={styles.summaryLabel}>Fine:</Text>
-                            <Text style={styles.fineAmount}>
-                              ₱{record.fineAmount.toFixed(2)}
-                            </Text>
-                          </View>
-                        )}
-                        {record.notes && (
-                          <View style={styles.notesSection}>
-                            <Text style={styles.notesLabel}>Notes:</Text>
-                            <Text style={styles.notesText}>{record.notes}</Text>
-                          </View>
-                        )}
+                      <View style={styles.headerRight}>
+                        <Text style={styles.dateLabel}>Borrowed:</Text>
+                        <Text style={styles.dateValue}>
+                          {formatDate(record.borrowedDate)}
+                        </Text>
+                        <Text style={styles.dateLabel}>Completed:</Text>
+                        <Text style={styles.dateValue}>
+                          {formatDateTime(record.completedDate)}
+                        </Text>
                       </View>
                     </View>
-                  ))}
-                </View>
+                    <View style={styles.itemsSection}>
+                      {record.items.map((item) => (
+                        <View key={item.id} style={styles.itemRow}>
+                          <View style={styles.itemLeft}>
+                            <Text style={styles.itemName}>{item.itemName}</Text>
+                            <Text style={styles.itemDetails}>
+                              Qty: {item.quantity} | ₱{item.pricePerQuantity}{" "}
+                              each
+                            </Text>
+                            <Text style={styles.returnedInfo}>
+                              Returned: {item.returnedQuantity}/{item.quantity}
+                            </Text>
+                          </View>
+                          <Text style={styles.itemPrice}>
+                            ₱
+                            {(item.pricePerQuantity * item.quantity).toFixed(2)}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                    <View style={styles.summarySection}>
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>Total:</Text>
+                        <Text style={styles.totalPrice}>
+                          ₱{record.totalPrice.toFixed(2)}
+                        </Text>
+                      </View>
+                      {record.fineAmount > 0 && (
+                        <View style={styles.summaryRow}>
+                          <Text style={styles.summaryLabel}>Fine:</Text>
+                          <Text style={styles.fineAmount}>
+                            ₱{record.fineAmount.toFixed(2)}
+                          </Text>
+                        </View>
+                      )}
+                      {record.notes && (
+                        <View style={styles.notesSection}>
+                          <Text style={styles.notesLabel}>Notes:</Text>
+                          <Text style={styles.notesText}>{record.notes}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ))
               )}
-            </ScrollView>
-          </>
-        ) : null}
+            </View>
+          ) : (
+            <View style={styles.chartContainer}>{renderChart()}</View>
+          )}
+        </ScrollView>
 
-        {/* Filter Modal - Gluestack UI */}
+        {/* Filter Modal */}
         <Modal
           isOpen={showFilterModal}
           onClose={() => setShowFilterModal(false)}
@@ -743,7 +1076,6 @@ export default function RecordsReport() {
               </ModalCloseButton>
             </ModalHeader>
             <ModalBody>
-              {/* Status Filter */}
               <View style={styles.filterSection}>
                 <Text style={styles.filterSectionTitle}>Status</Text>
                 <View style={styles.statusOptions}>
@@ -770,8 +1102,6 @@ export default function RecordsReport() {
                   ))}
                 </View>
               </View>
-
-              {/* Date Range Filter */}
               <View style={styles.filterSection}>
                 <Text style={styles.filterSectionTitle}>Date Range</Text>
                 <HStack style={styles.dateInputs} space="xs">
@@ -1025,8 +1355,118 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginLeft: 6,
   },
-  recordsList: {
+  tabsContainer: {
+    backgroundColor: "#ffffff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+    paddingVertical: 8,
+  },
+  tabsRow: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+  },
+  tab: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginRight: 8,
+    borderRadius: 8,
+    backgroundColor: "#f3f4f6",
+  },
+  tabActive: {
+    backgroundColor: "#3b82f6",
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#6b7280",
+  },
+  tabTextActive: {
+    color: "#ffffff",
+  },
+  contentContainer: {
     flex: 1,
+  },
+  chartContainer: {
+    padding: 16,
+    backgroundColor: "#ffffff",
+  },
+  chartTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 16,
+    color: "#1f2937",
+  },
+  chart: {
+    borderRadius: 12,
+    marginVertical: 8,
+  },
+  noDataText: {
+    color: "#6b7280",
+    fontSize: 14,
+    textAlign: "center",
+    paddingVertical: 40,
+  },
+  legendContainer: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+  },
+  legendTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 12,
+    color: "#374151",
+  },
+  legendGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  legendItem: {
+    backgroundColor: "#f9fafb",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: "#3b82f6",
+    marginBottom: 8,
+    minWidth: "45%",
+  },
+  legendItemName: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1f2937",
+  },
+  legendItemCount: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 2,
+  },
+  borrowerList: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+  },
+  borrowerItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+  borrowerName: {
+    fontSize: 13,
+    color: "#374151",
+  },
+  borrowerCount: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#10b981",
+  },
+  cardsContainer: {
+    padding: 16,
   },
   emptyContainer: {
     padding: 40,
@@ -1035,9 +1475,6 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#6b7280",
     fontSize: 16,
-  },
-  cardsContainer: {
-    padding: 16,
   },
   recordCard: {
     backgroundColor: "#ffffff",

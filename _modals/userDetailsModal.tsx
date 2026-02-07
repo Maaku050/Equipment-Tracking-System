@@ -41,6 +41,7 @@ import {
   deleteObject,
 } from "firebase/storage";
 import { Edit, Package } from "lucide-react-native";
+import { Switch } from "@/components/ui/switch";
 
 interface User {
   uid: string;
@@ -49,9 +50,9 @@ interface User {
   role: "student" | "staff" | "admin";
   course: string;
   contactNumber: string;
-  status: string;
+  status: "active" | "inactive";
   imageUrl: string;
-  imagePath?: string; // Add this
+  imagePath?: string;
 }
 
 interface RecordItem {
@@ -105,6 +106,7 @@ export default function UserDetailsModal({
   const [email, setEmail] = useState("");
   const [course, setCourse] = useState("");
   const [contactNumber, setContactNumber] = useState("");
+  const [status, setStatus] = useState<"active" | "inactive">("active");
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -123,6 +125,7 @@ export default function UserDetailsModal({
       setEmail(user.email);
       setCourse(user.course);
       setContactNumber(user.contactNumber);
+      setStatus(user.status);
       setImageUri(user.imageUrl || null);
       fetchBorrowRecords(user.uid);
     }
@@ -306,8 +309,9 @@ export default function UserDetailsModal({
         name,
         course,
         contactNumber,
+        status,
         imageUrl,
-        imagePath, // Store the path
+        imagePath,
         updatedAt: new Date(),
       });
 
@@ -328,6 +332,7 @@ export default function UserDetailsModal({
       setEmail(user.email);
       setCourse(user.course);
       setContactNumber(user.contactNumber);
+      setStatus(user.status);
       setImageUri(user.imageUrl || null);
     }
     setIsEditing(false);
@@ -408,9 +413,9 @@ export default function UserDetailsModal({
                   <HStack space="sm">
                     <Badge
                       variant="solid"
-                      action={user.status === "active" ? "success" : "error"}
+                      action={status === "active" ? "success" : "error"}
                     >
-                      <BadgeText>{user.status.toUpperCase()}</BadgeText>
+                      <BadgeText>{status.toUpperCase()}</BadgeText>
                     </Badge>
                     <Badge variant="outline">
                       <BadgeText className="capitalize">{user.role}</BadgeText>
@@ -531,6 +536,43 @@ export default function UserDetailsModal({
                     )}
                   </FormControl>
                 </HStack>
+
+                {/* Account Status Toggle */}
+                <FormControl>
+                  <FormControlLabel>
+                    <Text className="font-semibold">Account Status</Text>
+                  </FormControlLabel>
+                  {isEditing ? (
+                    <HStack space="md" className="items-center">
+                      <Switch
+                        value={status === "active"}
+                        onValueChange={(value) =>
+                          setStatus(value ? "active" : "inactive")
+                        }
+                        trackColor={{ false: "#dc2626", true: "#16a34a" }}
+                      />
+                      <Text className="text-typography-700">
+                        {status === "active"
+                          ? "Active (User can login)"
+                          : "Inactive (User cannot login)"}
+                      </Text>
+                    </HStack>
+                  ) : (
+                    <HStack space="sm" className="items-center">
+                      <Badge
+                        variant="solid"
+                        action={status === "active" ? "success" : "error"}
+                      >
+                        <BadgeText>{status.toUpperCase()}</BadgeText>
+                      </Badge>
+                      <Text className="text-typography-600 text-sm">
+                        {status === "active"
+                          ? "User can login"
+                          : "User cannot login"}
+                      </Text>
+                    </HStack>
+                  )}
+                </FormControl>
               </VStack>
 
               <Divider />
@@ -547,6 +589,7 @@ export default function UserDetailsModal({
                         setName(user.name);
                         setCourse(user.course);
                         setContactNumber(user.contactNumber);
+                        setStatus(user.status);
                         setImageUri(user.imageUrl || null);
                       }
                       setErrors({});

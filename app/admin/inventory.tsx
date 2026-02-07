@@ -1,4 +1,4 @@
-// admin/inventory.tsx
+// app/admin/inventory.tsx | Inventory Interface
 import { Box } from "@/components/ui/box";
 import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
 import { Plus, Search } from "lucide-react-native";

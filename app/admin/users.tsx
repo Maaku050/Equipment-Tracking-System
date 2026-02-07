@@ -1,4 +1,4 @@
-// admin/users.tsx
+// app/admin/users.tsx | Borrowers Interface
 import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
 import { Plus, Search } from "lucide-react-native";
 import React, { useState } from "react";
@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Image } from "@/components/ui/image";
 import { Heading } from "@/components/ui/heading";
 import { Spinner } from "@/components/ui/spinner";
+import { Badge, BadgeText } from "@/components/ui/badge";
 import AddUserModal from "@/_modals/addUserModal";
 import UserDetailsModal from "@/_modals/userDetailsModal";
 import { Fab, FabIcon, FabLabel } from "@/components/ui/fab";
@@ -189,7 +190,7 @@ export default function UsersInterface() {
                       source={{
                         uri:
                           user.imageUrl ||
-                          "https://via.placeholder.com/240/cccccc/ffffff?text=No+Image",
+                          "https://imgs.search.brave.com/D7Fi54QiF7gpiUdo8Jg_FimmtbGGz8iKZf4U51dGGTk/rs:fit:860:0:0:0/g:ce/aHR0cHM6Ly9tZWRp/YS5pc3RvY2twaG90/by5jb20vaWQvMjE2/ODc3NDExMS92ZWN0/b3IvYXZhdGFyLW9y/LXBlcnNvbi1zaWdu/LXByb2ZpbGUtcGlj/dHVyZS1wb3J0cmFp/dC1pY29uLXVzZXIt/cHJvZmlsZS1zeW1i/b2wuanBnP3M9NjEy/eDYxMiZ3PTAmaz0y/MCZjPTZxdzFMUkc1/M3owMFJYSm5WS1FD/NThXN1huVzJnZFFm/R0JJUjQzRTk3T2M9",
                       }}
                       className="mb-6 h-[240px] w-full rounded-md aspect-[263/240]"
                       alt={user.name}
@@ -211,6 +212,20 @@ export default function UsersInterface() {
                         📚 {user.course}
                       </Text>
                     )}
+
+                    {/* Status Badge */}
+                    <View className="mt-3 mb-2">
+                      <Badge
+                        variant="solid"
+                        action={user.status === "active" ? "success" : "error"}
+                        size="sm"
+                      >
+                        <BadgeText>
+                          {user.status === "active" ? "✓ ACTIVE" : "✕ INACTIVE"}
+                        </BadgeText>
+                      </Badge>
+                    </View>
+
                     {userFines[user.uid] > 0 && (
                       <Text className="text-sm font-semibold text-error-600 mt-2">
                         💸 Fines: ₱{userFines[user.uid].toFixed(2)}
@@ -222,9 +237,6 @@ export default function UsersInterface() {
                         Calculating fines…
                       </Text>
                     )}
-                    {/* <Text className="text-xs text-typography-500 mt-2 capitalize">
-                      {user.role} • {user.status}
-                    </Text> */}
                   </Card>
                 </TouchableOpacity>
               </GridItem>

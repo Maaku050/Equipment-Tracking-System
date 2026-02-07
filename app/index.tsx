@@ -1,4 +1,4 @@
-// app/index.tsx
+// app/index.tsx | Login Interface
 import React, { useState } from "react";
 import {
   StyleSheet,
@@ -11,6 +11,7 @@ import {
   useWindowDimensions,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import {
   signInWithEmailAndPassword,
@@ -492,9 +493,13 @@ export default function LoginScreen() {
                     elevation: 4,
                   }}
                 >
-                  <ButtonText style={{ fontSize: 16, fontWeight: "600" }}>
-                    {loading ? "Signing in..." : "Sign In"}
-                  </ButtonText>
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <ButtonText style={{ fontSize: 16, fontWeight: "600" }}>
+                      Sign In
+                    </ButtonText>
+                  )}
                 </Button>
               </VStack>
 

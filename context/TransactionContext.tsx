@@ -6,8 +6,10 @@ import { db } from "@/firebase/firebaseConfig";
 export type TransactionStatus =
   | "Request"
   | "Ongoing"
+  | "Ondue"
   | "Overdue"
   | "Incomplete"
+  | "Incomplete and Ondue"
   | "Incomplete and Overdue"
   | "Complete"
   | "Complete and Overdue";
@@ -43,6 +45,7 @@ export interface Transaction {
 
 export interface TransactionStats {
   ongoing: number;
+  ondue: number;
   incomplete: number;
   overdue: number;
   complete: number;
@@ -65,6 +68,7 @@ const TransactionContext = createContext<TransactionContextType>({
   transactions: [],
   stats: {
     ongoing: 0,
+    ondue: 0,
     incomplete: 0,
     overdue: 0,
     complete: 0,
@@ -89,6 +93,7 @@ export const TransactionProvider = ({
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [stats, setStats] = useState<TransactionStats>({
     ongoing: 0,
+    ondue: 0,
     incomplete: 0,
     overdue: 0,
     complete: 0,
@@ -102,6 +107,7 @@ export const TransactionProvider = ({
   const calculateStats = (txns: Transaction[]): TransactionStats => {
     const newStats: TransactionStats = {
       ongoing: 0,
+      ondue: 0,
       incomplete: 0,
       overdue: 0,
       complete: 0,
@@ -113,7 +119,12 @@ export const TransactionProvider = ({
       // Count each status
       if (t.status === "Request") newStats.request++;
       if (t.status === "Ongoing") newStats.ongoing++;
-      if (t.status === "Incomplete" || t.status === "Incomplete and Overdue") {
+      if (t.status === "Ondue") newStats.ondue++;
+      if (
+        t.status === "Incomplete" ||
+        t.status === "Incomplete and Ondue" ||
+        t.status === "Incomplete and Overdue"
+      ) {
         newStats.incomplete++;
       }
       if (t.status === "Overdue") newStats.overdue++;
