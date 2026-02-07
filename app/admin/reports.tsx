@@ -177,133 +177,136 @@ export default function RecordsReport() {
       const itemsHTML = record.items
         .map(
           (item) => `
-        <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${item.itemName}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.quantity}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">₱${item.pricePerQuantity.toFixed(2)}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">${item.returnedQuantity}/${item.quantity}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">₱${(item.pricePerQuantity * item.quantity).toFixed(2)}</td>
-        </tr>
-      `,
+      <tr>
+        <td style="padding: 4px 6px; border-bottom: 1px solid #e5e7eb; font-size: 11px;">${item.itemName}</td>
+        <td style="padding: 4px 6px; border-bottom: 1px solid #e5e7eb; text-align: center; font-size: 11px;">${item.quantity}</td>
+        <td style="padding: 4px 6px; border-bottom: 1px solid #e5e7eb; text-align: right; font-size: 11px;">₱${item.pricePerQuantity.toFixed(2)}</td>
+        <td style="padding: 4px 6px; border-bottom: 1px solid #e5e7eb; text-align: center; font-size: 11px;">${item.returnedQuantity}/${item.quantity}</td>
+        <td style="padding: 4px 6px; border-bottom: 1px solid #e5e7eb; text-align: right; font-size: 11px;">₱${(item.pricePerQuantity * item.quantity).toFixed(2)}</td>
+      </tr>
+    `,
         )
         .join("");
 
       recordsHTML += `
-        <div style="page-break-inside: avoid; margin-bottom: 24px; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden;">
-          <div style="background-color: #f9fafb; padding: 16px; border-bottom: 2px solid #e5e7eb;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-              <div>
-                <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 600;">${record.studentName}</h3>
-                <p style="margin: 0; font-size: 13px; color: #6b7280;">${record.studentEmail}</p>
-                <p style="margin: 4px 0 0 0; font-size: 12px; color: #9ca3af; font-family: monospace;">${record.transactionId}</p>
+      <div style="page-break-inside: avoid; margin-bottom: 12px; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden;">
+        <div style="background-color: #f9fafb; padding: 8px 12px; border-bottom: 1px solid #e5e7eb;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="flex: 1;">
+              <h3 style="margin: 0 0 2px 0; font-size: 13px; font-weight: 600; line-height: 1.3;">${record.studentName}</h3>
+              <p style="margin: 0; font-size: 10px; color: #6b7280; line-height: 1.3;">${record.studentEmail}</p>
+              <p style="margin: 2px 0 0 0; font-size: 9px; color: #9ca3af; font-family: monospace;">${record.transactionId}</p>
+            </div>
+            <div style="text-align: right; margin-left: 12px;">
+              <div style="display: inline-block; padding: 2px 8px; border-radius: 10px; background-color: ${getStatusColor(record.finalStatus)}; color: white; font-size: 9px; font-weight: 600; margin-bottom: 4px; white-space: nowrap;">
+                ${record.finalStatus}
               </div>
-              <div style="text-align: right;">
-                <div style="display: inline-block; padding: 4px 12px; border-radius: 12px; background-color: ${getStatusColor(record.finalStatus)}; color: white; font-size: 11px; font-weight: 600; margin-bottom: 8px;">
-                  ${record.finalStatus}
-                </div>
-                <p style="margin: 0; font-size: 11px; color: #9ca3af;">Borrowed: ${formatDate(record.borrowedDate)}</p>
-                <p style="margin: 4px 0 0 0; font-size: 11px; color: #9ca3af;">Completed: ${formatDateTime(record.completedDate)}</p>
-              </div>
+              <p style="margin: 0; font-size: 9px; color: #9ca3af; line-height: 1.3;">Borrowed: ${formatDate(record.borrowedDate)}</p>
+              <p style="margin: 2px 0 0 0; font-size: 9px; color: #9ca3af; line-height: 1.3;">Completed: ${formatDateTime(record.completedDate)}</p>
             </div>
           </div>
+        </div>
+        
+        <div style="padding: 8px 12px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background-color: #f9fafb;">
+                <th style="padding: 4px 6px; text-align: left; font-size: 10px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Item</th>
+                <th style="padding: 4px 6px; text-align: center; font-size: 10px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Qty</th>
+                <th style="padding: 4px 6px; text-align: right; font-size: 10px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Price/Unit</th>
+                <th style="padding: 4px 6px; text-align: center; font-size: 10px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Returned</th>
+                <th style="padding: 4px 6px; text-align: right; font-size: 10px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHTML}
+            </tbody>
+          </table>
           
-          <div style="padding: 16px;">
-            <table style="width: 100%; border-collapse: collapse;">
-              <thead>
-                <tr style="background-color: #f9fafb;">
-                  <th style="padding: 8px; text-align: left; font-size: 12px; font-weight: 600; border-bottom: 2px solid #e5e7eb;">Item</th>
-                  <th style="padding: 8px; text-align: center; font-size: 12px; font-weight: 600; border-bottom: 2px solid #e5e7eb;">Qty</th>
-                  <th style="padding: 8px; text-align: right; font-size: 12px; font-weight: 600; border-bottom: 2px solid #e5e7eb;">Price/Unit</th>
-                  <th style="padding: 8px; text-align: center; font-size: 12px; font-weight: 600; border-bottom: 2px solid #e5e7eb;">Returned</th>
-                  <th style="padding: 8px; text-align: right; font-size: 12px; font-weight: 600; border-bottom: 2px solid #e5e7eb;">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itemsHTML}
-              </tbody>
-            </table>
-            
-            <div style="margin-top: 16px; padding-top: 16px; border-top: 2px solid #e5e7eb;">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <span style="font-weight: 600; font-size: 14px;">Total:</span>
-                <span style="font-weight: 700; font-size: 14px; color: #3b82f6;">₱${record.totalPrice.toFixed(2)}</span>
+          <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+            <div style="flex: 1;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span style="font-weight: 600; font-size: 12px;">Total:</span>
+                <span style="font-weight: 700; font-size: 12px; color: #3b82f6;">₱${record.totalPrice.toFixed(2)}</span>
               </div>
               ${
                 record.fineAmount > 0
                   ? `
-              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <span style="font-weight: 600; font-size: 14px;">Fine:</span>
-                <span style="font-weight: 700; font-size: 14px; color: #ef4444;">₱${record.fineAmount.toFixed(2)}</span>
-              </div>
-              `
-                  : ""
-              }
-              ${
-                record.notes
-                  ? `
-              <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
-                <p style="margin: 0; font-size: 12px; font-weight: 600; color: #6b7280;">Notes:</p>
-                <p style="margin: 4px 0 0 0; font-size: 12px; color: #374151; font-style: italic;">${record.notes}</p>
+              <div style="display: flex; justify-content: space-between;">
+                <span style="font-weight: 600; font-size: 12px;">Fine:</span>
+                <span style="font-weight: 700; font-size: 12px; color: #ef4444;">₱${record.fineAmount.toFixed(2)}</span>
               </div>
               `
                   : ""
               }
             </div>
+            ${
+              record.notes
+                ? `
+            <div style="margin-left: 16px; flex: 1; padding-left: 16px; border-left: 1px solid #e5e7eb;">
+              <p style="margin: 0; font-size: 9px; font-weight: 600; color: #6b7280;">Notes:</p>
+              <p style="margin: 2px 0 0 0; font-size: 10px; color: #374151; font-style: italic; line-height: 1.3;">${record.notes}</p>
+            </div>
+            `
+                : ""
+            }
           </div>
         </div>
-      `;
+      </div>
+    `;
     });
 
     return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Records Report - ${currentDate}</title>
-        <style>
-          @media print {
-            body { margin: 0; }
-            @page { margin: 1cm; }
-          }
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.5;
-            color: #1f2937;
-          }
-        </style>
-      </head>
-      <body>
-        <div style="margin-bottom: 24px; padding-bottom: 16px; border-bottom: 3px solid #3b82f6;">
-          <h1 style="margin: 0 0 8px 0; font-size: 24px; color: #1f2937;">eLabTrack Records Report</h1>
-          <p style="margin: 0; font-size: 14px; color: #6b7280;">Generated on ${currentDate}</p>
-        </div>
-        
-        <div style="margin-bottom: 24px; padding: 16px; background-color: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
-          <h2 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600;">Summary Statistics</h2>
-          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
-            <div>
-              <p style="margin: 0; font-size: 11px; color: #6b7280;">Total Records</p>
-              <p style="margin: 4px 0 0 0; font-size: 20px; font-weight: bold;">${stats.total}</p>
-            </div>
-            <div>
-              <p style="margin: 0; font-size: 11px; color: #6b7280;">Complete</p>
-              <p style="margin: 4px 0 0 0; font-size: 20px; font-weight: bold; color: #10b981;">${stats.complete}</p>
-            </div>
-            <div>
-              <p style="margin: 0; font-size: 11px; color: #6b7280;">Incomplete</p>
-              <p style="margin: 4px 0 0 0; font-size: 20px; font-weight: bold; color: #f97316;">${stats.incomplete + stats.incompleteAndOverdue}</p>
-            </div>
-            <div>
-              <p style="margin: 0; font-size: 11px; color: #6b7280;">Total Fines</p>
-              <p style="margin: 4px 0 0 0; font-size: 20px; font-weight: bold; color: #ef4444;">₱${stats.totalFines.toFixed(2)}</p>
-            </div>
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Records Report - ${currentDate}</title>
+      <style>
+        @media print {
+          body { margin: 0; }
+          @page { margin: 0.75cm; }
+        }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+          line-height: 1.3;
+          color: #1f2937;
+          font-size: 11px;
+        }
+      </style>
+    </head>
+    <body>
+      <div style="margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #3b82f6;">
+        <h1 style="margin: 0 0 4px 0; font-size: 20px; color: #1f2937;">eLabTrack Records Report</h1>
+        <p style="margin: 0; font-size: 11px; color: #6b7280;">Generated on ${currentDate}</p>
+      </div>
+      
+      <div style="margin-bottom: 16px; padding: 12px; background-color: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb;">
+        <h2 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600;">Summary Statistics</h2>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+          <div>
+            <p style="margin: 0; font-size: 9px; color: #6b7280;">Total Records</p>
+            <p style="margin: 2px 0 0 0; font-size: 16px; font-weight: bold;">${stats.total}</p>
+          </div>
+          <div>
+            <p style="margin: 0; font-size: 9px; color: #6b7280;">Complete</p>
+            <p style="margin: 2px 0 0 0; font-size: 16px; font-weight: bold; color: #10b981;">${stats.complete}</p>
+          </div>
+          <div>
+            <p style="margin: 0; font-size: 9px; color: #6b7280;">Incomplete</p>
+            <p style="margin: 2px 0 0 0; font-size: 16px; font-weight: bold; color: #f97316;">${stats.incomplete + stats.incompleteAndOverdue}</p>
+          </div>
+          <div>
+            <p style="margin: 0; font-size: 9px; color: #6b7280;">Total Fines</p>
+            <p style="margin: 2px 0 0 0; font-size: 16px; font-weight: bold; color: #ef4444;">₱${stats.totalFines.toFixed(2)}</p>
           </div>
         </div>
-        
-        <h2 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600;">Records (${filteredRecords.length})</h2>
-        ${recordsHTML}
-      </body>
-      </html>
-    `;
+      </div>
+      
+      <h2 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600;">Records (${filteredRecords.length})</h2>
+      ${recordsHTML}
+    </body>
+    </html>
+  `;
   };
 
   const getStatusColor = (status: RecordStatus) => {

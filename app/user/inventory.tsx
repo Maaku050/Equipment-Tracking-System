@@ -275,7 +275,6 @@ export default function StudentInventory() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
-        horizontal
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
@@ -305,7 +304,7 @@ export default function StudentInventory() {
             )}
           </Box>
         ) : (
-          <>
+          <Box style={styles.gridContainer}>
             {filteredEquipment.map((item) => (
               <Box key={item.id} style={styles.gridItem}>
                 <Pressable
@@ -339,66 +338,54 @@ export default function StudentInventory() {
                         {item.status === "unavailable"
                           ? "Unavailable"
                           : item.status === "maintenance"
-                            ? "Maintenace"
+                            ? "Maintenance"
                             : item.availableQuantity > 0
                               ? "Available"
                               : "Out of Stock"}
                       </Text>
                     </Box>
 
-                    <VStack style={styles.cardContent} space="md">
-                      <VStack space="xs" style={{ flex: 0 }}>
-                        <Heading size="md" style={styles.equipmentName}>
+                    <HStack style={styles.cardContent} space="sm">
+                      <VStack style={styles.cardLeftSection} space="xs">
+                        <Heading size="sm" style={styles.equipmentName}>
                           {item.name}
                         </Heading>
                         <Text
                           style={styles.equipmentDescription}
-                          numberOfLines={6}
+                          numberOfLines={2}
                         >
                           {item.description}
                         </Text>
                       </VStack>
 
-                      <VStack
-                        space="xs"
-                        style={{ flex: 1, justifyContent: "flex-end" }}
-                      >
-                        <VStack space="xs" style={styles.infoSection}>
-                          <HStack style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>Available:</Text>
-                            <Text style={styles.infoValue}>
-                              {item.availableQuantity} / {item.totalQuantity}
-                            </Text>
-                          </HStack>
-                          <HStack style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>Borrowed:</Text>
-                            <Text style={styles.infoValue}>
-                              {item.borrowedQuantity}
-                            </Text>
-                          </HStack>
-                          <HStack style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>Price:</Text>
-                            <Text style={styles.infoPriceValue}>
-                              ₱{item.pricePerUnit.toFixed(2)}
-                            </Text>
-                          </HStack>
-                        </VStack>
-
-                        <HStack space="xs" style={styles.badgeRow}>
-                          <Badge
-                            action={getConditionColor(item.condition)}
-                            size="sm"
-                          >
-                            <BadgeText>{item.condition}</BadgeText>
-                          </Badge>
+                      <VStack style={styles.cardRightSection} space="xs">
+                        <HStack style={styles.infoRow}>
+                          <Text style={styles.infoLabel}>Avail:</Text>
+                          <Text style={styles.infoValue}>
+                            {item.availableQuantity}/{item.totalQuantity}
+                          </Text>
                         </HStack>
+                        <HStack style={styles.infoRow}>
+                          <Text style={styles.infoLabel}>Price:</Text>
+                          <Text style={styles.infoPriceValue}>
+                            ₱{item.pricePerUnit.toFixed(0)}
+                          </Text>
+                        </HStack>
+                        <Badge
+                          action={getConditionColor(item.condition)}
+                          size="sm"
+                        >
+                          <BadgeText style={styles.badgeText}>
+                            {item.condition}
+                          </BadgeText>
+                        </Badge>
                       </VStack>
-                    </VStack>
+                    </HStack>
                   </Card>
                 </Pressable>
               </Box>
             ))}
-          </>
+          </Box>
         )}
       </ScrollView>
 
@@ -855,8 +842,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollViewContent: {
-    flexGrow: 1,
-    paddingVertical: 8,
+    padding: 16,
+    alignItems: "center",
+  },
+  gridContainer: {
+    width: "100%",
+    maxWidth: 600,
+    alignItems: "center",
   },
   loadingContainer: {
     flex: 1,
@@ -891,96 +883,100 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   gridItem: {
-    width: 280,
-    paddingHorizontal: 8,
-    marginRight: 5,
+    width: "100%",
+    marginBottom: 12,
   },
   pressableContainer: {
     flex: 1,
   },
   equipmentCard: {
-    padding: 16,
+    padding: 12,
     borderRadius: 12,
     backgroundColor: "#ffffff",
     borderWidth: 1,
     borderColor: "#e5e7eb",
-    flex: 1,
   },
   equipmentImage: {
-    height: 180,
+    height: 120,
     width: "100%",
     borderRadius: 8,
     marginBottom: 12,
   },
   availabilityBadgeAvailable: {
     position: "absolute",
-    top: 24,
-    right: 24,
+    top: 20,
+    right: 20,
     paddingVertical: 4,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 12,
     backgroundColor: "#10b981",
   },
   availabilityBadgeUnavailable: {
     position: "absolute",
-    top: 24,
-    right: 24,
+    top: 20,
+    right: 20,
     paddingVertical: 4,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 12,
     backgroundColor: "#ef4444",
   },
   availabilityBadgeMaintenance: {
     position: "absolute",
-    top: 24,
-    right: 24,
+    top: 20,
+    right: 20,
     paddingVertical: 4,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 12,
     backgroundColor: "#f59e0b",
   },
   availabilityText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
     color: "#ffffff",
     paddingHorizontal: 5,
   },
   cardContent: {
+    alignItems: "flex-end",
+  },
+  cardLeftSection: {
     flex: 1,
-    marginTop: 8,
+    marginRight: 12,
+  },
+  cardRightSection: {
+    alignItems: "flex-end",
+    minWidth: 100,
   },
   equipmentName: {
     color: "#1f2937",
-    fontSize: 18,
+    fontSize: 16,
+    fontWeight: "600",
   },
   equipmentDescription: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#6b7280",
-    lineHeight: 20,
-  },
-  infoSection: {
-    marginTop: 4,
+    lineHeight: 18,
   },
   infoRow: {
     justifyContent: "space-between",
     alignItems: "center",
+    minWidth: 100,
   },
   infoLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#6b7280",
   },
   infoValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
     color: "#374151",
   },
   infoPriceValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     color: "#3b82f6",
   },
-  badgeRow: {
-    marginTop: 8,
+  badgeText: {
+    fontSize: 10,
   },
   modalImage: {
     height: 240,

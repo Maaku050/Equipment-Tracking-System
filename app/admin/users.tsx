@@ -1,6 +1,13 @@
 // app/admin/users.tsx | Borrowers Interface
 import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
-import { Plus, Search, Printer, PrinterIcon } from "lucide-react-native";
+import {
+  Plus,
+  Search,
+  Printer,
+  Filter,
+  CheckIcon,
+  PrinterIcon,
+} from "lucide-react-native";
 import React, { useState } from "react";
 import {
   Text,
@@ -26,6 +33,24 @@ import { db } from "@/firebase/firebaseConfig";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import AdminGuard from "@/components/AdminGuard";
 import { Input, InputField, InputIcon, InputSlot } from "@/components/ui/input";
+import {
+  Modal,
+  ModalBackdrop,
+  ModalContent,
+  ModalHeader,
+  ModalCloseButton,
+  ModalBody,
+  ModalFooter,
+} from "@/components/ui/modal";
+import { Icon, CloseIcon } from "@/components/ui/icon";
+import { VStack } from "@/components/ui/vstack";
+import { HStack } from "@/components/ui/hstack";
+import {
+  Checkbox,
+  CheckboxIndicator,
+  CheckboxIcon,
+  CheckboxLabel,
+} from "@/components/ui/checkbox";
 
 export default function UsersInterface() {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -35,25 +60,53 @@ export default function UsersInterface() {
   const [loadingFines, setLoadingFines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Filter modal states
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [filterHasFines, setFilterHasFines] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<
+    "all" | "active" | "inactive"
+  >("all");
+
   // Use the Users Context instead of local state
   const { users, loading, error, refreshUsers } = useUsers();
 
-  // Filter users based on search query
+  // Filter users based on search query and filters
   const filteredUsers = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return users;
+    let result = users;
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter((user) => {
+        return (
+          user.name?.toLowerCase().includes(query) ||
+          user.email?.toLowerCase().includes(query) ||
+          user.course?.toLowerCase().includes(query) ||
+          user.contactNumber?.toLowerCase().includes(query)
+        );
+      });
     }
 
-    const query = searchQuery.toLowerCase();
-    return users.filter((user) => {
-      return (
-        user.name?.toLowerCase().includes(query) ||
-        user.email?.toLowerCase().includes(query) ||
-        user.course?.toLowerCase().includes(query) ||
-        user.contactNumber?.toLowerCase().includes(query)
-      );
-    });
-  }, [users, searchQuery]);
+    // Apply fines filter
+    if (filterHasFines) {
+      result = result.filter((user) => userFines[user.uid] > 0);
+    }
+
+    // Apply status filter
+    if (filterStatus !== "all") {
+      result = result.filter((user) => user.status === filterStatus);
+    }
+
+    return result;
+  }, [users, searchQuery, filterHasFines, filterStatus, userFines]);
+
+  // Calculate active filter count
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filterHasFines) count++;
+    if (filterStatus !== "all") count++;
+    return count;
+  }, [filterHasFines, filterStatus]);
 
   const handleCardPress = (user: any) => {
     setSelectedUser(user);
@@ -118,7 +171,17 @@ export default function UsersInterface() {
     return totalFine;
   };
 
+  const handleClearFilters = () => {
+    setFilterHasFines(false);
+    setFilterStatus("all");
+  };
+
+  const handleApplyFilters = () => {
+    setShowFilterModal(false);
+  };
+
   const handlePrint = () => {
+    if (filteredUsers.length === 0) return;
     if (Platform.OS === "web") {
       const printContent = generatePrintHTML();
       const printWindow = window.open("", "_blank");
@@ -142,7 +205,7 @@ export default function UsersInterface() {
       year: "numeric",
     });
 
-    const usersToPrint = searchQuery.trim() ? filteredUsers : users;
+    const usersToPrint = filteredUsers;
 
     const usersCardsHTML = usersToPrint
       .map(
@@ -277,7 +340,9 @@ export default function UsersInterface() {
           <h1>Students Report</h1>
           <p>Generated on ${currentDate}</p>
           <p>Total Students: ${usersToPrint.length}</p>
-          ${searchQuery.trim() ? `<p style="font-style: italic;">Search Filter: "${searchQuery}"</p>` : ""}
+          ${searchQuery.trim() ? `<p style="font-style: italic;">Search: "${searchQuery}"</p>` : ""}
+          ${filterHasFines ? `<p style="font-style: italic;">Filter: With Outstanding Fines</p>` : ""}
+          ${filterStatus !== "all" ? `<p style="font-style: italic;">Status: ${filterStatus.toUpperCase()}</p>` : ""}
         </div>
         
         <div class="users-grid">
@@ -309,7 +374,7 @@ export default function UsersInterface() {
   return (
     <AdminGuard>
       <ScrollView style={{ padding: 15 }}>
-        {/* Search Bar and Print Button */}
+        {/* Search Bar, Filter and Print Buttons */}
         <View className="mb-4" style={{ flexDirection: "row", gap: 8 }}>
           <View style={{ flex: 1 }}>
             <Input variant="outline" size="md">
@@ -323,6 +388,23 @@ export default function UsersInterface() {
               />
             </Input>
           </View>
+          <TouchableOpacity
+            style={[
+              styles.filterButton,
+              activeFilterCount > 0 && styles.filterButtonActive,
+            ]}
+            onPress={() => setShowFilterModal(true)}
+          >
+            <Filter
+              size={20}
+              color={activeFilterCount > 0 ? "#ffffff" : "#3b82f6"}
+            />
+            {activeFilterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.printButton}
             onPress={handlePrint}
@@ -450,6 +532,198 @@ export default function UsersInterface() {
           onClose={handleDetailsClose}
           onUpdate={handleUserUpdate}
         />
+
+        {/* Filter Modal */}
+        <Modal
+          isOpen={showFilterModal}
+          onClose={() => setShowFilterModal(false)}
+          size="md"
+        >
+          <ModalBackdrop />
+          <ModalContent>
+            <ModalHeader>
+              <Heading size="lg">Filter Students</Heading>
+              <ModalCloseButton>
+                <Icon as={CloseIcon} />
+              </ModalCloseButton>
+            </ModalHeader>
+
+            <ModalBody>
+              <VStack space="lg">
+                {/* Fines Filter */}
+                <VStack space="md">
+                  <Heading size="sm">Outstanding Fines</Heading>
+                  <TouchableOpacity
+                    onPress={() => setFilterHasFines(!filterHasFines)}
+                    activeOpacity={0.7}
+                  >
+                    <HStack
+                      space="md"
+                      className="items-center p-3 rounded-lg border border-outline-200 bg-background-50"
+                    >
+                      <Checkbox
+                        value="hasFines"
+                        isChecked={filterHasFines}
+                        onChange={() => setFilterHasFines(!filterHasFines)}
+                      >
+                        <CheckboxIndicator>
+                          <CheckboxIcon as={CheckIcon} />
+                        </CheckboxIndicator>
+                      </Checkbox>
+                      <VStack style={{ flex: 1 }}>
+                        <Text className="font-semibold text-typography-900">
+                          Show only students with fines
+                        </Text>
+                        <Text className="text-xs text-typography-600">
+                          Filter users who have outstanding fine amounts
+                        </Text>
+                      </VStack>
+                    </HStack>
+                  </TouchableOpacity>
+                </VStack>
+
+                {/* Status Filter */}
+                <VStack space="md">
+                  <Heading size="sm">Account Status</Heading>
+                  <VStack space="sm">
+                    <TouchableOpacity
+                      onPress={() => setFilterStatus("all")}
+                      activeOpacity={0.7}
+                    >
+                      <HStack
+                        space="md"
+                        className="items-center p-3 rounded-lg border border-outline-200 bg-background-50"
+                      >
+                        <Checkbox
+                          value="all"
+                          isChecked={filterStatus === "all"}
+                          onChange={() => setFilterStatus("all")}
+                        >
+                          <CheckboxIndicator>
+                            <CheckboxIcon as={CheckIcon} />
+                          </CheckboxIndicator>
+                        </Checkbox>
+                        <VStack style={{ flex: 1 }}>
+                          <Text className="font-semibold text-typography-900">
+                            All Students
+                          </Text>
+                          <Text className="text-xs text-typography-600">
+                            Show both active and inactive accounts
+                          </Text>
+                        </VStack>
+                      </HStack>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => setFilterStatus("active")}
+                      activeOpacity={0.7}
+                    >
+                      <HStack
+                        space="md"
+                        className="items-center p-3 rounded-lg border border-outline-200 bg-background-50"
+                      >
+                        <Checkbox
+                          value="active"
+                          isChecked={filterStatus === "active"}
+                          onChange={() => setFilterStatus("active")}
+                        >
+                          <CheckboxIndicator>
+                            <CheckboxIcon as={CheckIcon} />
+                          </CheckboxIndicator>
+                        </Checkbox>
+                        <VStack style={{ flex: 1 }}>
+                          <HStack space="sm" className="items-center">
+                            <Badge variant="solid" action="success" size="sm">
+                              <BadgeText>ACTIVE</BadgeText>
+                            </Badge>
+                            <Text className="font-semibold text-typography-900">
+                              Active Only
+                            </Text>
+                          </HStack>
+                          <Text className="text-xs text-typography-600">
+                            Students who can login and borrow equipment
+                          </Text>
+                        </VStack>
+                      </HStack>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => setFilterStatus("inactive")}
+                      activeOpacity={0.7}
+                    >
+                      <HStack
+                        space="md"
+                        className="items-center p-3 rounded-lg border border-outline-200 bg-background-50"
+                      >
+                        <Checkbox
+                          value="inactive"
+                          isChecked={filterStatus === "inactive"}
+                          onChange={() => setFilterStatus("inactive")}
+                        >
+                          <CheckboxIndicator>
+                            <CheckboxIcon as={CheckIcon} />
+                          </CheckboxIndicator>
+                        </Checkbox>
+                        <VStack style={{ flex: 1 }}>
+                          <HStack space="sm" className="items-center">
+                            <Badge variant="solid" action="error" size="sm">
+                              <BadgeText>INACTIVE</BadgeText>
+                            </Badge>
+                            <Text className="font-semibold text-typography-900">
+                              Inactive Only
+                            </Text>
+                          </HStack>
+                          <Text className="text-xs text-typography-600">
+                            Students who cannot login or borrow
+                          </Text>
+                        </VStack>
+                      </HStack>
+                    </TouchableOpacity>
+                  </VStack>
+                </VStack>
+
+                {/* Active Filters Summary */}
+                {activeFilterCount > 0 && (
+                  <Card className="p-4 bg-primary-50 border border-primary-200">
+                    <HStack space="sm" className="items-center">
+                      <Badge action="info" variant="solid">
+                        <BadgeText>{activeFilterCount}</BadgeText>
+                      </Badge>
+                      <Text className="text-sm font-semibold text-primary-900">
+                        {activeFilterCount} active filter
+                        {activeFilterCount > 1 ? "s" : ""} applied
+                      </Text>
+                    </HStack>
+                  </Card>
+                )}
+              </VStack>
+            </ModalBody>
+
+            <ModalFooter>
+              <HStack space="md" className="w-full">
+                <Button
+                  variant="outline"
+                  action="secondary"
+                  onPress={() => {
+                    handleClearFilters();
+                    setShowFilterModal(false);
+                  }}
+                  className="flex-1"
+                  isDisabled={activeFilterCount === 0}
+                >
+                  <ButtonText>Clear All</ButtonText>
+                </Button>
+                <Button
+                  onPress={handleApplyFilters}
+                  className="flex-1"
+                  action="primary"
+                >
+                  <ButtonText>Apply Filters</ButtonText>
+                </Button>
+              </HStack>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
       </ScrollView>
 
       <Fab
@@ -468,6 +742,37 @@ export default function UsersInterface() {
 }
 
 const styles = StyleSheet.create({
+  filterButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#3b82f6",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    position: "relative",
+  },
+  filterButtonActive: {
+    backgroundColor: "#3b82f6",
+  },
+  filterBadge: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    backgroundColor: "#ef4444",
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterBadgeText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "700",
+  },
   printButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -475,7 +780,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
-    marginLeft: 12,
   },
   printButtonText: {
     color: "#ffffff",
