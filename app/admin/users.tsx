@@ -1,8 +1,15 @@
 // app/admin/users.tsx | Borrowers Interface
 import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
-import { Plus, Search } from "lucide-react-native";
+import { Plus, Search, Printer, PrinterIcon } from "lucide-react-native";
 import React, { useState } from "react";
-import { Text, ScrollView, TouchableOpacity, View } from "react-native";
+import {
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  View,
+  Platform,
+  StyleSheet,
+} from "react-native";
 import { Grid, GridItem } from "@/components/ui/grid";
 import { Card } from "@/components/ui/card";
 import { Image } from "@/components/ui/image";
@@ -111,6 +118,176 @@ export default function UsersInterface() {
     return totalFine;
   };
 
+  const handlePrint = () => {
+    if (Platform.OS === "web") {
+      const printContent = generatePrintHTML();
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => {
+          printWindow.print();
+          printWindow.close();
+        }, 250);
+      }
+    }
+  };
+
+  const generatePrintHTML = () => {
+    const currentDate = new Date().toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    const usersToPrint = searchQuery.trim() ? filteredUsers : users;
+
+    const usersCardsHTML = usersToPrint
+      .map(
+        (user) => `
+        <div class="user-card">
+          <img 
+            src="${user.imageUrl || "https://imgs.search.brave.com/D7Fi54QiF7gpiUdo8Jg_FimmtbGGz8iKZf4U51dGGTk/rs:fit:860:0:0:0/g:ce/aHR0cHM6Ly9tZWRp/YS5pc3RvY2twaG90/by5jb20vaWQvMjE2/ODc3NDExMS92ZWN0/b3IvYXZhdGFyLW9y/LXBlcnNvbi1zaWdu/LXByb2ZpbGUtcGlj/dHVyZS1wb3J0cmFp/dC1pY29uLXVzZXIt/cHJvZmlsZS1zeW1i/b2wuanBnP3M9NjEy/eDYxMiZ3PTAmaz0y/MCZjPTZxdzFMUkc1/M3owMFJYSm5WS1FD/NThXN1huVzJnZFFm/R0JJUjQzRTk3T2M9"}" 
+            alt="${user.name}"
+            class="user-image"
+          />
+          <h3 class="user-name">${user.name}</h3>
+          <p class="user-email">${user.email}</p>
+          ${user.contactNumber ? `<p class="user-detail">📱 ${user.contactNumber}</p>` : ""}
+          ${user.course ? `<p class="user-detail">📚 ${user.course}</p>` : ""}
+          <div class="badges">
+            <span class="badge ${user.status === "active" ? "badge-success" : "badge-error"}">
+              ${user.status === "active" ? "✓ ACTIVE" : "✕ INACTIVE"}
+            </span>
+          </div>
+          ${userFines[user.uid] > 0 ? `<p class="user-fines">💸 Fines: ₱${userFines[user.uid].toFixed(2)}</p>` : ""}
+        </div>
+      `,
+      )
+      .join("");
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Students Report - ${currentDate}</title>
+        <style>
+          @media print {
+            body { margin: 0; }
+            @page { 
+              margin: 0.5cm;
+              size: landscape;
+            }
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            padding: 15px;
+            margin: 0;
+            line-height: 1.3;
+            color: #1f2937;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3b82f6;
+            padding-bottom: 15px;
+          }
+          .header h1 {
+            margin: 0 0 8px 0;
+            font-size: 24px;
+            color: #1f2937;
+          }
+          .header p {
+            margin: 3px 0;
+            color: #6b7280;
+            font-size: 12px;
+          }
+          .users-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+            margin-top: 15px;
+          }
+          .user-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 10px;
+            background: #fff;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            page-break-inside: avoid;
+            text-align: center;
+          }
+          .user-image {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            background-color: #f3f4f6;
+          }
+          .user-name {
+            font-size: 13px;
+            font-weight: 600;
+            margin: 0 0 6px 0;
+            color: #111827;
+            line-height: 1.2;
+          }
+          .user-email {
+            font-size: 10px;
+            color: #6b7280;
+            margin: 0 0 6px 0;
+            word-break: break-all;
+          }
+          .user-detail {
+            font-size: 10px;
+            color: #374151;
+            margin: 2px 0;
+          }
+          .badges {
+            display: flex;
+            justify-content: center;
+            gap: 4px;
+            margin: 8px 0;
+          }
+          .badge {
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-size: 9px;
+            font-weight: 600;
+            color: white;
+          }
+          .badge-success {
+            background-color: #10b981;
+          }
+          .badge-error {
+            background-color: #ef4444;
+          }
+          .user-fines {
+            font-size: 10px;
+            font-weight: 600;
+            color: #ef4444;
+            margin-top: 6px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Students Report</h1>
+          <p>Generated on ${currentDate}</p>
+          <p>Total Students: ${usersToPrint.length}</p>
+          ${searchQuery.trim() ? `<p style="font-style: italic;">Search Filter: "${searchQuery}"</p>` : ""}
+        </div>
+        
+        <div class="users-grid">
+          ${usersCardsHTML}
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
   // Show loading spinner
   if (loading) {
     return (
@@ -132,18 +309,28 @@ export default function UsersInterface() {
   return (
     <AdminGuard>
       <ScrollView style={{ padding: 15 }}>
-        {/* Search Bar */}
-        <View className="mb-4">
-          <Input variant="outline" size="md">
-            <InputSlot className="pl-3">
-              <InputIcon as={Search} />
-            </InputSlot>
-            <InputField
-              placeholder="Search by name, email, course, or contact..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </Input>
+        {/* Search Bar and Print Button */}
+        <View className="mb-4" style={{ flexDirection: "row", gap: 8 }}>
+          <View style={{ flex: 1 }}>
+            <Input variant="outline" size="md">
+              <InputSlot className="pl-3">
+                <InputIcon as={Search} />
+              </InputSlot>
+              <InputField
+                placeholder="Search by name, email, course, or contact..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </Input>
+          </View>
+          <TouchableOpacity
+            style={styles.printButton}
+            onPress={handlePrint}
+            disabled={loading || users.length === 0}
+          >
+            <PrinterIcon size={20} color="#ffffff" />
+            <Text style={styles.printButtonText}>Print</Text>
+          </TouchableOpacity>
         </View>
 
         {users.length === 0 ? (
@@ -279,3 +466,21 @@ export default function UsersInterface() {
     </AdminGuard>
   );
 }
+
+const styles = StyleSheet.create({
+  printButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#3b82f6",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginLeft: 12,
+  },
+  printButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 6,
+  },
+});

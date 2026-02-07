@@ -474,6 +474,7 @@ export default function LoginScreen() {
                       secureTextEntry
                       autoCapitalize="none"
                       style={{ fontSize: 15, color: "#1f2937" }}
+                      onSubmitEditing={handleLogin}
                     />
                   </Input>
                 </VStack>

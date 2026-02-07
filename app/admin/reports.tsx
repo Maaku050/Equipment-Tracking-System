@@ -74,7 +74,7 @@ export default function RecordsReport() {
     startDate: null,
     endDate: null,
   });
-  const [currentView, setCurrentView] = useState<ChartView>("equipment-usage");
+  const [currentView, setCurrentView] = useState<ChartView>("records");
 
   const statusOptions: RecordStatus[] = [
     "Complete",
@@ -83,6 +83,7 @@ export default function RecordsReport() {
   ];
 
   const chartTabs = [
+    { id: "records", label: "📋 Records List", icon: "📋" },
     { id: "equipment-usage", label: "📊 Equipment Usage", icon: "📊" },
     { id: "borrowing-trends", label: "📈 Borrowing Trends", icon: "📈" },
     { id: "return-status", label: "🔄 Return Status", icon: "🔄" },
@@ -91,7 +92,6 @@ export default function RecordsReport() {
     { id: "peak-days", label: "📅 Peak Days", icon: "📅" },
     { id: "avg-duration", label: "⏱️ Avg Duration", icon: "⏱️" },
     { id: "overdue-rate", label: "⚠️ Overdue Rate", icon: "⚠️" },
-    { id: "records", label: "📋 Records List", icon: "📋" },
   ];
 
   useEffect(() => {

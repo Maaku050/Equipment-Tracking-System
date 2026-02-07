@@ -273,6 +273,7 @@ export default function StudentInventory() {
       {/* Equipment Grid */}
       <ScrollView
         style={styles.scrollView}
+        contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
         horizontal
         refreshControl={
@@ -307,7 +308,10 @@ export default function StudentInventory() {
           <>
             {filteredEquipment.map((item) => (
               <Box key={item.id} style={styles.gridItem}>
-                <Pressable onPress={() => handleEquipmentClick(item)}>
+                <Pressable
+                  onPress={() => handleEquipmentClick(item)}
+                  style={styles.pressableContainer}
+                >
                   <Card style={styles.equipmentCard}>
                     <Image
                       source={{
@@ -322,61 +326,73 @@ export default function StudentInventory() {
                     {/* Availability Indicator */}
                     <Box
                       style={
-                        item.availableQuantity > 0
-                          ? styles.availabilityBadgeAvailable
-                          : styles.availabilityBadgeUnavailable
+                        item.status === "unavailable"
+                          ? styles.availabilityBadgeUnavailable
+                          : item.status === "maintenance"
+                            ? styles.availabilityBadgeMaintenance
+                            : item.availableQuantity > 0
+                              ? styles.availabilityBadgeAvailable
+                              : styles.availabilityBadgeUnavailable
                       }
                     >
                       <Text style={styles.availabilityText}>
-                        {item.availableQuantity > 0
-                          ? "Available"
-                          : "Out of Stock"}
+                        {item.status === "unavailable"
+                          ? "Unavailable"
+                          : item.status === "maintenance"
+                            ? "Maintenace"
+                            : item.availableQuantity > 0
+                              ? "Available"
+                              : "Out of Stock"}
                       </Text>
                     </Box>
 
-                    <VStack space="xs" style={{ marginTop: 20 }}>
-                      <Heading size="md" style={styles.equipmentName}>
-                        {item.name}
-                      </Heading>
-                      <Text
-                        style={styles.equipmentDescription}
-                        numberOfLines={2}
-                      >
-                        {item.description}
-                      </Text>
-
-                      <VStack space="xs" style={styles.infoSection}>
-                        <HStack style={styles.infoRow}>
-                          <Text style={styles.infoLabel}>Available:</Text>
-                          <Text style={styles.infoValue}>
-                            {item.availableQuantity} / {item.totalQuantity}
-                          </Text>
-                        </HStack>
-                        <HStack style={styles.infoRow}>
-                          <Text style={styles.infoLabel}>Borrowed:</Text>
-                          <Text style={styles.infoValue}>
-                            {item.borrowedQuantity}
-                          </Text>
-                        </HStack>
-                        <HStack style={styles.infoRow}>
-                          <Text style={styles.infoLabel}>Price:</Text>
-                          <Text style={styles.infoPriceValue}>
-                            ₱{item.pricePerUnit.toFixed(2)}
-                          </Text>
-                        </HStack>
+                    <VStack style={styles.cardContent} space="md">
+                      <VStack space="xs" style={{ flex: 0 }}>
+                        <Heading size="md" style={styles.equipmentName}>
+                          {item.name}
+                        </Heading>
+                        <Text
+                          style={styles.equipmentDescription}
+                          numberOfLines={6}
+                        >
+                          {item.description}
+                        </Text>
                       </VStack>
 
-                      <HStack space="xs" style={styles.badgeRow}>
-                        <Badge action={getStatusColor(item.status)} size="sm">
-                          <BadgeText>{item.status}</BadgeText>
-                        </Badge>
-                        <Badge
-                          action={getConditionColor(item.condition)}
-                          size="sm"
-                        >
-                          <BadgeText>{item.condition}</BadgeText>
-                        </Badge>
-                      </HStack>
+                      <VStack
+                        space="xs"
+                        style={{ flex: 1, justifyContent: "flex-end" }}
+                      >
+                        <VStack space="xs" style={styles.infoSection}>
+                          <HStack style={styles.infoRow}>
+                            <Text style={styles.infoLabel}>Available:</Text>
+                            <Text style={styles.infoValue}>
+                              {item.availableQuantity} / {item.totalQuantity}
+                            </Text>
+                          </HStack>
+                          <HStack style={styles.infoRow}>
+                            <Text style={styles.infoLabel}>Borrowed:</Text>
+                            <Text style={styles.infoValue}>
+                              {item.borrowedQuantity}
+                            </Text>
+                          </HStack>
+                          <HStack style={styles.infoRow}>
+                            <Text style={styles.infoLabel}>Price:</Text>
+                            <Text style={styles.infoPriceValue}>
+                              ₱{item.pricePerUnit.toFixed(2)}
+                            </Text>
+                          </HStack>
+                        </VStack>
+
+                        <HStack space="xs" style={styles.badgeRow}>
+                          <Badge
+                            action={getConditionColor(item.condition)}
+                            size="sm"
+                          >
+                            <BadgeText>{item.condition}</BadgeText>
+                          </Badge>
+                        </HStack>
+                      </VStack>
                     </VStack>
                   </Card>
                 </Pressable>
@@ -838,9 +854,15 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  scrollViewContent: {
+    flexGrow: 1,
+    paddingVertical: 8,
+  },
   loadingContainer: {
+    flex: 1,
     padding: 40,
     alignItems: "center",
+    justifyContent: "center",
   },
   loadingText: {
     fontSize: 14,
@@ -848,8 +870,10 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   emptyContainer: {
+    flex: 1,
     padding: 40,
     alignItems: "center",
+    justifyContent: "center",
   },
   emptyTitle: {
     fontSize: 18,
@@ -866,15 +890,13 @@ const styles = StyleSheet.create({
   clearFiltersButtonLarge: {
     marginTop: 16,
   },
-  gridContainer: {
-    flexDirection: "row",
-    borderWidth: 1,
-    borderColor: "red",
-  },
   gridItem: {
-    width: "100%",
-    minWidth: 280,
-    padding: 8,
+    width: 280,
+    paddingHorizontal: 8,
+    marginRight: 5,
+  },
+  pressableContainer: {
+    flex: 1,
   },
   equipmentCard: {
     padding: 16,
@@ -885,19 +907,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   equipmentImage: {
-    height: 500,
-    width: 500,
+    height: 180,
+    width: "100%",
     borderRadius: 8,
-    marginBottom: 50,
-    borderWidth: 1,
-    flex: 1,
+    marginBottom: 12,
   },
   availabilityBadgeAvailable: {
     position: "absolute",
     top: 24,
     right: 24,
-    paddingLeft: 5,
-    paddingRight: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
     borderRadius: 12,
     backgroundColor: "#10b981",
   },
@@ -910,10 +930,24 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#ef4444",
   },
+  availabilityBadgeMaintenance: {
+    position: "absolute",
+    top: 24,
+    right: 24,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#f59e0b",
+  },
   availabilityText: {
     fontSize: 11,
     fontWeight: "600",
     color: "#ffffff",
+    paddingHorizontal: 5,
+  },
+  cardContent: {
+    flex: 1,
+    marginTop: 8,
   },
   equipmentName: {
     color: "#1f2937",
