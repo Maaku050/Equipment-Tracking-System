@@ -106,7 +106,7 @@ export const determineTransactionStatus = (
   currentStatus: TransactionStatus,
 ): TransactionStatus => {
   const now = new Date();
-  now.setHours(0, 0, 0, 0); // Normalize to start of day
+  now.setHours(0, 0, 0, 0);
 
   const dueDateNormalized = new Date(dueDate);
   dueDateNormalized.setHours(0, 0, 0, 0);
@@ -114,27 +114,22 @@ export const determineTransactionStatus = (
   const isOverdue = now > dueDateNormalized;
   const isOndue = now.getTime() === dueDateNormalized.getTime();
 
-  // Check if all items are fully returned
   const allReturned = items.every(
     (item) => item.returned && item.returnedQuantity === item.quantity,
   );
 
-  // Check if any items are partially returned
   const someReturned = items.some(
     (item) =>
       item.returnedQuantity > 0 && item.returnedQuantity < item.quantity,
   );
 
-  // If this is a request, don't change status based on due date
   if (currentStatus === "Request") {
     return "Request";
   }
 
-  // Determine status based on return state and due date
   if (allReturned) {
     return isOverdue ? "Complete and Overdue" : "Complete";
   } else if (someReturned || items.some((item) => item.returnedQuantity > 0)) {
-    // Incomplete scenarios
     if (isOverdue) {
       return "Incomplete and Overdue";
     } else if (isOndue) {
@@ -143,7 +138,6 @@ export const determineTransactionStatus = (
       return "Incomplete";
     }
   } else {
-    // No items returned
     if (isOverdue) {
       return "Overdue";
     } else if (isOndue) {
@@ -156,41 +150,43 @@ export const determineTransactionStatus = (
 
 /**
  * Calculate the total fine amount based on days overdue
- * @param dueDate - The original due date
- * @param currentDate - The current date (defaults to now)
- * @param finePerDay - Fine amount per day (defaults to 10)
- * @returns Total fine amount
  */
 export const calculateOverdueFine = (
   dueDate: Date,
   currentDate: Date = new Date(),
   finePerDay: number = 10,
 ): number => {
-  // Normalize dates to start of day for comparison
   const currentNormalized = new Date(currentDate);
   currentNormalized.setHours(0, 0, 0, 0);
 
   const dueNormalized = new Date(dueDate);
   dueNormalized.setHours(0, 0, 0, 0);
 
-  // If not overdue (or is ondue), no fine
   if (currentNormalized <= dueNormalized) {
     return 0;
   }
 
-  // Calculate days overdue (rounded up to include partial days)
   const millisecondsPerDay = 1000 * 60 * 60 * 24;
   const diffInMilliseconds =
     currentNormalized.getTime() - dueNormalized.getTime();
   const daysOverdue = Math.ceil(diffInMilliseconds / millisecondsPerDay);
 
-  // Calculate total fine
   return daysOverdue * finePerDay;
 };
 
 /**
+ * Calculate damage/lost fine for items
+ */
+export const calculateDamageLostFine = (items: BorrowedItem[]): number => {
+  return items.reduce((total, item) => {
+    const damagedFine = item.damagedQuantity * item.pricePerQuantity;
+    const lostFine = item.lostQuantity * item.pricePerQuantity;
+    return total + damagedFine + lostFine;
+  }, 0);
+};
+
+/**
  * Updates all transaction statuses and fines based on current date
- * This should be called periodically or on app load
  */
 export const updateOverdueTransactions = async () => {
   try {
@@ -205,22 +201,18 @@ export const updateOverdueTransactions = async () => {
       const transaction = docSnap.data() as Transaction;
       const dueDate = transaction.dueDate.toDate();
 
-      // Calculate what the status should be
       const correctStatus = determineTransactionStatus(
         transaction.items,
         dueDate,
         transaction.status,
       );
 
-      // Calculate the correct fine amount based on days overdue
       const correctFineAmount = calculateOverdueFine(dueDate, now, 10);
 
-      // Check if we need to update status or fine amount
       const needsStatusUpdate = correctStatus !== transaction.status;
       const needsFineUpdate =
         correctFineAmount !== (transaction.fineAmount || 0);
 
-      // Only update if something has changed
       if (needsStatusUpdate || needsFineUpdate) {
         const transactionRef = doc(db, "transactions", docSnap.id);
         const updates: any = {
@@ -253,13 +245,11 @@ export const updateOverdueTransactions = async () => {
 
 /**
  * Optional: Query only potentially overdue transactions for better performance
- * Use this if you have a large number of transactions
  */
 export const updateOverdueTransactionsOptimized = async () => {
   try {
     const transactionsRef = collection(db, "transactions");
 
-    // Query only transactions that are not completed and might be overdue
     const q = query(
       transactionsRef,
       where("status", "in", [
@@ -438,10 +428,9 @@ export const createTransaction = async (
   try {
     const batch = writeBatch(db);
 
-    // Generate unique transaction ID
     const now = new Date();
-    const dateStr = now.toISOString().split("T")[0].replace(/-/g, ""); // YYYYMMDD
-    const timeStr = now.getTime().toString().slice(-6); // Last 6 digits of timestamp
+    const dateStr = now.toISOString().split("T")[0].replace(/-/g, "");
+    const timeStr = now.getTime().toString().slice(-6);
     const transactionId = `TXN-${dateStr}-${timeStr}`;
 
     const items: BorrowedItem[] = selectedEquipment.map((equipment, index) => ({
@@ -473,12 +462,9 @@ export const createTransaction = async (
       status: isAdminCreated ? "Ongoing" : "Request",
       totalPrice,
       fineAmount: 0,
-
-      // 🔔 Notification flags (REQUIRED)
       ondueNotified: false,
       reminderNotified: false,
       overdueNotified: false,
-
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     };
@@ -488,7 +474,6 @@ export const createTransaction = async (
       transactionData,
     );
 
-    // Update equipment quantities
     for (const equipment of selectedEquipment) {
       const equipmentRef = doc(db, "equipment", equipment.equipmentId);
       const equipmentSnap = await getDoc(equipmentRef);
@@ -505,7 +490,6 @@ export const createTransaction = async (
 
     await batch.commit();
 
-    // 🔔 Call maintenance function (non-blocking)
     try {
       const manualMaintenance = httpsCallable(
         functions,
@@ -518,7 +502,6 @@ export const createTransaction = async (
         "Maintenance check failed (non-critical):",
         maintenanceError,
       );
-      // Don't block the success flow even if maintenance fails
     }
 
     return { id: transactionRef.id, transactionId };
@@ -537,7 +520,6 @@ export const approveTransaction = async (transactionId: string) => {
 
     const transaction = snap.data() as Transaction;
 
-    // 1️⃣ Update transaction status to "Ongoing" and reset notification flags
     await updateDoc(transactionRef, {
       status: "Ongoing",
       borrowedDate: serverTimestamp(),
@@ -547,7 +529,6 @@ export const approveTransaction = async (transactionId: string) => {
       updatedAt: serverTimestamp(),
     });
 
-    // 2️⃣ Send approval notification
     const equipmentList = transaction.items
       .map((i) => `<li>${i.itemName} (Qty: ${i.quantity})</li>`)
       .join("");
@@ -592,7 +573,6 @@ Thank you!`,
       createdAt: serverTimestamp(),
     });
 
-    // 3️⃣ Call maintenance function (non-blocking)
     try {
       const manualMaintenance = httpsCallable(
         functions,
@@ -605,7 +585,6 @@ Thank you!`,
         "Maintenance check failed (non-critical):",
         maintenanceError,
       );
-      // Don't block the success flow even if maintenance fails
     }
   } catch (error) {
     console.error("Error approving transaction:", error);
@@ -623,7 +602,6 @@ export const denyTransaction = async (transactionId: string) => {
     const transaction = snap.data() as Transaction;
     const batch = writeBatch(db);
 
-    // 1️⃣ Return equipment quantities
     for (const item of transaction.items) {
       const equipmentRef = doc(db, "equipment", item.equipmentId);
       const equipmentSnap = await getDoc(equipmentRef);
@@ -639,7 +617,6 @@ export const denyTransaction = async (transactionId: string) => {
       }
     }
 
-    // 2️⃣ Send denial notification
     const equipmentList = transaction.items
       .map((i) => `<li>${i.itemName} (Qty: ${i.quantity})</li>`)
       .join("");
@@ -684,7 +661,6 @@ Thank you.`,
       createdAt: serverTimestamp(),
     });
 
-    // 3️⃣ Delete transaction
     batch.delete(transactionRef);
     await batch.commit();
   } catch (error) {
@@ -712,7 +688,13 @@ export const updateTransactionStatus = async (
 export const completeTransaction = async (
   transactionId: string,
   itemReturnStates: {
-    [itemId: string]: { checked: boolean; quantity: number };
+    [itemId: string]: {
+      checked: boolean;
+      quantity: number;
+      damagedQuantity: number;
+      lostQuantity: number;
+      damageNotes: string;
+    };
   },
 ) => {
   try {
@@ -726,28 +708,51 @@ export const completeTransaction = async (
     const transactionData = transactionSnap.data() as Transaction;
     const batch = writeBatch(db);
 
-    const updatedItems = transactionData.items.map((item) => ({
-      ...item,
-      returned: itemReturnStates[item.id]?.checked || item.returned,
-      returnedQuantity:
-        itemReturnStates[item.id]?.quantity || item.returnedQuantity,
-    }));
+    const updatedItems = transactionData.items.map((item) => {
+      const state = itemReturnStates[item.id];
 
-    const allReturned = updatedItems.every(
-      (item) => item.returned && item.returnedQuantity === item.quantity,
-    );
+      // If no state exists for this item, keep it unchanged
+      if (!state) {
+        return item;
+      }
+
+      return {
+        ...item,
+        returned: state.checked ?? item.returned,
+        // CRITICAL: Add new quantities to existing quantities for cumulative tracking
+        returnedQuantity: (item.returnedQuantity || 0) + (state.quantity || 0),
+        damagedQuantity:
+          (item.damagedQuantity || 0) + (state.damagedQuantity || 0),
+        lostQuantity: (item.lostQuantity || 0) + (state.lostQuantity || 0),
+        damageNotes: state.damageNotes || item.damageNotes || "",
+      };
+    });
+
+    // Check if all items are fully accounted for (returned + damaged + lost = borrowed)
+    const allReturned = updatedItems.every((item) => {
+      const totalAccountedFor =
+        item.returnedQuantity + item.damagedQuantity + item.lostQuantity;
+      return totalAccountedFor === item.quantity;
+    });
 
     const now = new Date();
     const dueDate = transactionData.dueDate.toDate();
     const isOverdue = now > dueDate;
 
-    let fineAmount = 0;
+    // Calculate overdue fine
+    let overdueFine = 0;
     if (isOverdue) {
       const daysOverdue = Math.ceil(
         (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
       );
-      fineAmount = daysOverdue * 10;
+      overdueFine = daysOverdue * 10;
     }
+
+    // Calculate damage/lost fine
+    const damageLostFine = calculateDamageLostFine(updatedItems);
+
+    // Total fine amount
+    const totalFineAmount = overdueFine + damageLostFine;
 
     let finalStatus: string;
 
@@ -770,7 +775,7 @@ export const completeTransaction = async (
         completedDate: Timestamp.now(),
         finalStatus: finalStatus,
         totalPrice: transactionData.totalPrice,
-        fineAmount,
+        fineAmount: totalFineAmount,
         notes: "",
         createdAt: transactionData.createdAt || Timestamp.now(),
         archivedAt: Timestamp.now(),
@@ -779,18 +784,64 @@ export const completeTransaction = async (
       await addDoc(collection(db, "records"), recordData);
       batch.delete(transactionRef);
 
-      if (isOverdue && fineAmount > 0) {
+      // Send receipt email notification
+      await sendReceiptNotification(
+        transactionData,
+        updatedItems,
+        overdueFine,
+        damageLostFine,
+        totalFineAmount,
+      );
+
+      // Create fine record if there's any fine
+      if (totalFineAmount > 0) {
+        const fineReasons: string[] = [];
+
+        if (overdueFine > 0) {
+          const daysOverdue = Math.ceil(
+            (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
+          );
+          fineReasons.push(
+            `Late return: ${daysOverdue} days overdue (₱${overdueFine.toFixed(2)})`,
+          );
+        }
+
+        if (damageLostFine > 0) {
+          updatedItems.forEach((item) => {
+            if (item.damagedQuantity > 0) {
+              fineReasons.push(
+                `${item.itemName}: ${item.damagedQuantity} damaged (₱${(item.damagedQuantity * item.pricePerQuantity).toFixed(2)})`,
+              );
+            }
+            if (item.lostQuantity > 0) {
+              fineReasons.push(
+                `${item.itemName}: ${item.lostQuantity} lost (₱${(item.lostQuantity * item.pricePerQuantity).toFixed(2)})`,
+              );
+            }
+          });
+        }
+
         const fineData = {
           transactionId: transactionData.transactionId || transactionId,
           studentId: transactionData.studentId,
           studentName: transactionData.studentName,
           studentEmail: transactionData.studentEmail,
-          fineType: "late_return",
-          amount: fineAmount,
-          reason: `${Math.ceil((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))} days overdue`,
-          daysOverdue: Math.ceil(
-            (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
-          ),
+          fineType:
+            overdueFine > 0 && damageLostFine > 0
+              ? "combined"
+              : overdueFine > 0
+                ? "late_return"
+                : "damage_lost",
+          amount: totalFineAmount,
+          reason: fineReasons.join("; "),
+          overdueFine,
+          damageLostFine,
+          daysOverdue:
+            overdueFine > 0
+              ? Math.ceil(
+                  (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24),
+                )
+              : 0,
           status: "unpaid",
           createdAt: Timestamp.now(),
           updatedAt: Timestamp.now(),
@@ -809,27 +860,40 @@ export const completeTransaction = async (
       batch.update(transactionRef, {
         items: updatedItems,
         status: transactionStatus,
-        fineAmount,
+        fineAmount: totalFineAmount,
         updatedAt: Timestamp.now(),
       });
     }
 
+    // Update equipment quantities - only restore items that were returned in good condition
     for (const item of updatedItems) {
       const originalItem = transactionData.items.find((i) => i.id === item.id);
-      const quantityReturned =
-        item.returnedQuantity - (originalItem?.returnedQuantity || 0);
 
-      if (quantityReturned > 0) {
+      // Calculate new quantities returned (good condition only)
+      const newReturnedQuantity =
+        item.returnedQuantity - (originalItem?.returnedQuantity ?? 0);
+      const newDamagedQuantity =
+        item.damagedQuantity - (originalItem?.damagedQuantity ?? 0);
+      const newLostQuantity =
+        item.lostQuantity - (originalItem?.lostQuantity ?? 0);
+
+      // Total items being processed in this update
+      const totalProcessed =
+        newReturnedQuantity + newDamagedQuantity + newLostQuantity;
+
+      if (totalProcessed > 0) {
         const equipmentRef = doc(db, "equipment", item.equipmentId);
         const equipmentSnap = await getDoc(equipmentRef);
 
         if (equipmentSnap.exists()) {
           const equipmentData = equipmentSnap.data() as Equipment;
 
+          // Only returned items (good condition) go back to available quantity
+          // Damaged and lost items are removed from borrowed but NOT added to available
           batch.update(equipmentRef, {
             availableQuantity:
-              equipmentData.availableQuantity + quantityReturned,
-            borrowedQuantity: equipmentData.borrowedQuantity - quantityReturned,
+              equipmentData.availableQuantity + newReturnedQuantity,
+            borrowedQuantity: equipmentData.borrowedQuantity - totalProcessed,
             updatedAt: Timestamp.now(),
           });
         }
@@ -842,6 +906,309 @@ export const completeTransaction = async (
     console.error("Error completing transaction:", error);
     throw error;
   }
+};
+
+/**
+ * Send receipt notification email when transaction is completed
+ */
+const sendReceiptNotification = async (
+  transactionData: Transaction,
+  items: BorrowedItem[],
+  overdueFine: number,
+  damageLostFine: number,
+  totalFineAmount: number,
+) => {
+  const now = new Date();
+  const receiptDate = now.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const dueDate = transactionData.dueDate.toDate().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const borrowedDate = transactionData.borrowedDate
+    .toDate()
+    .toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+  // Build items list with return details
+  const itemsListHTML = items
+    .map(
+      (item) => `
+    <tr style="border-bottom: 1px solid #e5e7eb;">
+      <td style="padding: 12px; text-align: left;">${item.itemName}</td>
+      <td style="padding: 12px; text-align: center;">${item.quantity}</td>
+      <td style="padding: 12px; text-align: center;">${item.returnedQuantity}</td>
+      <td style="padding: 12px; text-align: center;">${item.damagedQuantity || 0}</td>
+      <td style="padding: 12px; text-align: center;">${item.lostQuantity || 0}</td>
+      <td style="padding: 12px; text-align: right;">₱${item.pricePerQuantity.toFixed(2)}</td>
+    </tr>
+  `,
+    )
+    .join("");
+
+  // Build damage/lost details if applicable
+  let damageDetailsHTML = "";
+  const damagedOrLostItems = items.filter(
+    (item) => item.damagedQuantity > 0 || item.lostQuantity > 0,
+  );
+
+  if (damagedOrLostItems.length > 0) {
+    const damageItemsHTML = damagedOrLostItems
+      .map((item) => {
+        const damages: string[] = [];
+        if (item.damagedQuantity > 0) {
+          damages.push(
+            `<li><strong>Damaged:</strong> ${item.damagedQuantity} × ₱${item.pricePerQuantity.toFixed(2)} = ₱${(item.damagedQuantity * item.pricePerQuantity).toFixed(2)}</li>`,
+          );
+        }
+        if (item.lostQuantity > 0) {
+          damages.push(
+            `<li><strong>Lost:</strong> ${item.lostQuantity} × ₱${item.pricePerQuantity.toFixed(2)} = ₱${(item.lostQuantity * item.pricePerQuantity).toFixed(2)}</li>`,
+          );
+        }
+        if (item.damageNotes) {
+          damages.push(`<li><em>Notes: ${item.damageNotes}</em></li>`);
+        }
+        return `
+          <div style="margin-bottom: 12px;">
+            <strong>${item.itemName}:</strong>
+            <ul style="margin: 4px 0 0 20px; padding: 0;">
+              ${damages.join("")}
+            </ul>
+          </div>
+        `;
+      })
+      .join("");
+
+    damageDetailsHTML = `
+      <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 16px; margin: 20px 0; border-radius: 4px;">
+        <h3 style="color: #dc2626; margin-top: 0; margin-bottom: 12px; font-size: 16px;">⚠️ Damage/Lost Items</h3>
+        ${damageItemsHTML}
+        <p style="margin: 12px 0 0 0; font-weight: bold; color: #991b1b;">
+          Total Damage/Lost Fine: ₱${damageLostFine.toFixed(2)}
+        </p>
+      </div>
+    `;
+  }
+
+  // Build overdue fine section if applicable
+  let overdueFineHTML = "";
+  if (overdueFine > 0) {
+    const daysOverdue = Math.ceil(
+      (now.getTime() - transactionData.dueDate.toDate().getTime()) /
+        (1000 * 60 * 60 * 24),
+    );
+    overdueFineHTML = `
+      <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; margin: 20px 0; border-radius: 4px;">
+        <h3 style="color: #d97706; margin-top: 0; margin-bottom: 8px; font-size: 16px;">⏰ Late Return Fine</h3>
+        <p style="margin: 0; color: #92400e;">
+          <strong>Days Overdue:</strong> ${daysOverdue} day${daysOverdue > 1 ? "s" : ""}<br>
+          <strong>Fine per Day:</strong> ₱10.00<br>
+          <strong>Total Late Fine:</strong> ₱${overdueFine.toFixed(2)}
+        </p>
+      </div>
+    `;
+  }
+
+  const notificationRef = doc(collection(db, "notifications"));
+  await setDoc(notificationRef, {
+    to: transactionData.studentEmail,
+    message: {
+      subject: "📄 Equipment Return Receipt - eLabTrack System",
+      text: `Equipment Return Receipt
+
+Dear ${transactionData.studentName},
+
+This is to confirm that your equipment return has been processed successfully.
+
+TRANSACTION DETAILS:
+Transaction ID: ${transactionData.transactionId}
+Return Date: ${receiptDate}
+Borrowed Date: ${borrowedDate}
+Due Date: ${dueDate}
+
+ITEMS RETURNED:
+${items.map((item) => `- ${item.itemName}: ${item.returnedQuantity}/${item.quantity} returned${item.damagedQuantity > 0 ? `, ${item.damagedQuantity} damaged` : ""}${item.lostQuantity > 0 ? `, ${item.lostQuantity} lost` : ""}`).join("\n")}
+
+FINANCIAL SUMMARY:
+Equipment Rental Total: ₱${transactionData.totalPrice.toFixed(2)}
+${overdueFine > 0 ? `Late Return Fine: ₱${overdueFine.toFixed(2)}` : ""}
+${damageLostFine > 0 ? `Damage/Lost Fine: ₱${damageLostFine.toFixed(2)}` : ""}
+${totalFineAmount > 0 ? `TOTAL FINE: ₱${totalFineAmount.toFixed(2)}` : "No fines incurred"}
+
+${totalFineAmount > 0 ? "Please settle your outstanding fine at the laboratory office." : "Thank you for returning the equipment in good condition and on time."}
+
+Best regards,
+eLabTrack System`,
+      html: `
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+          <div style="background-color: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 6px solid #3b82f6;">
+            
+            <!-- Header -->
+            <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb;">
+              <h1 style="color: #1f2937; margin: 0 0 8px 0; font-size: 28px;">📄 Equipment Return Receipt</h1>
+              <p style="color: #6b7280; margin: 0; font-size: 14px;">eLabTrack Laboratory Management System</p>
+            </div>
+
+            <!-- Greeting -->
+            <p style="font-size: 16px; color: #374151; margin-bottom: 24px;">
+              Dear <strong>${transactionData.studentName}</strong>,
+            </p>
+
+            <p style="font-size: 15px; color: #4b5563; line-height: 1.6; margin-bottom: 24px;">
+              This is to confirm that your equipment return has been processed successfully. Please review the details below and keep this receipt for your records.
+            </p>
+
+            <!-- Transaction Info -->
+            <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+              <h2 style="color: #1f2937; margin-top: 0; margin-bottom: 16px; font-size: 18px; border-bottom: 2px solid #d1d5db; padding-bottom: 8px;">Transaction Details</h2>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; color: #6b7280; font-weight: 600; width: 180px;">Transaction ID:</td>
+                  <td style="padding: 8px 0; color: #111827; font-family: monospace; font-size: 15px;">${transactionData.transactionId}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Return Date:</td>
+                  <td style="padding: 8px 0; color: #111827;">${receiptDate}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Borrowed Date:</td>
+                  <td style="padding: 8px 0; color: #111827;">${borrowedDate}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #6b7280; font-weight: 600;">Due Date:</td>
+                  <td style="padding: 8px 0; color: #111827;">${dueDate}</td>
+                </tr>
+              </table>
+            </div>
+
+            <!-- Items Table -->
+            <div style="margin-bottom: 24px;">
+              <h2 style="color: #1f2937; margin-bottom: 16px; font-size: 18px; border-bottom: 2px solid #d1d5db; padding-bottom: 8px;">Items Returned</h2>
+              <table style="width: 100%; border-collapse: collapse; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+                <thead>
+                  <tr style="background-color: #f9fafb;">
+                    <th style="padding: 12px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">Item</th>
+                    <th style="padding: 12px; text-align: center; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">Borrowed</th>
+                    <th style="padding: 12px; text-align: center; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">Returned</th>
+                    <th style="padding: 12px; text-align: center; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">Damaged</th>
+                    <th style="padding: 12px; text-align: center; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">Lost</th>
+                    <th style="padding: 12px; text-align: right; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">Price/Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${itemsListHTML}
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Damage/Lost Details -->
+            ${damageDetailsHTML}
+
+            <!-- Overdue Fine -->
+            ${overdueFineHTML}
+
+            <!-- Financial Summary -->
+            <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 20px; margin: 24px 0; border-radius: 4px;">
+              <h2 style="color: #1e40af; margin-top: 0; margin-bottom: 16px; font-size: 18px;">💰 Financial Summary</h2>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; color: #1f2937; font-weight: 600;">Equipment Rental Total:</td>
+                  <td style="padding: 8px 0; color: #1f2937; text-align: right; font-family: monospace;">₱${transactionData.totalPrice.toFixed(2)}</td>
+                </tr>
+                ${
+                  overdueFine > 0
+                    ? `
+                <tr>
+                  <td style="padding: 8px 0; color: #d97706; font-weight: 600;">Late Return Fine:</td>
+                  <td style="padding: 8px 0; color: #d97706; text-align: right; font-family: monospace; font-weight: bold;">₱${overdueFine.toFixed(2)}</td>
+                </tr>
+                `
+                    : ""
+                }
+                ${
+                  damageLostFine > 0
+                    ? `
+                <tr>
+                  <td style="padding: 8px 0; color: #dc2626; font-weight: 600;">Damage/Lost Fine:</td>
+                  <td style="padding: 8px 0; color: #dc2626; text-align: right; font-family: monospace; font-weight: bold;">₱${damageLostFine.toFixed(2)}</td>
+                </tr>
+                `
+                    : ""
+                }
+                ${
+                  totalFineAmount > 0
+                    ? `
+                <tr style="border-top: 2px solid #3b82f6;">
+                  <td style="padding: 12px 0; color: #1f2937; font-weight: 700; font-size: 16px;">TOTAL FINE:</td>
+                  <td style="padding: 12px 0; color: #dc2626; text-align: right; font-family: monospace; font-weight: 700; font-size: 18px;">₱${totalFineAmount.toFixed(2)}</td>
+                </tr>
+                `
+                    : `
+                <tr style="border-top: 2px solid #3b82f6;">
+                  <td colspan="2" style="padding: 12px 0; color: #059669; font-weight: 600; text-align: center;">✅ No fines incurred</td>
+                </tr>
+                `
+                }
+              </table>
+            </div>
+
+            <!-- Action Required / Thank You -->
+            ${
+              totalFineAmount > 0
+                ? `
+            <div style="background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 16px; margin: 24px 0; border-radius: 4px;">
+              <p style="margin: 0; color: #991b1b; font-weight: 600;">
+                ⚠️ <strong>Action Required:</strong> Please settle your outstanding fine of <strong>₱${totalFineAmount.toFixed(2)}</strong> at the laboratory office.
+              </p>
+            </div>
+            `
+                : `
+            <div style="background-color: #ecfdf5; border-left: 4px solid #059669; padding: 16px; margin: 24px 0; border-radius: 4px;">
+              <p style="margin: 0; color: #065f46; font-weight: 600;">
+                ✅ Thank you for returning the equipment in good condition and on time!
+              </p>
+            </div>
+            `
+            }
+
+            <!-- Closing -->
+            <p style="font-size: 15px; color: #4b5563; line-height: 1.6; margin: 24px 0 8px 0;">
+              If you have any questions or concerns regarding this receipt, please contact the laboratory office.
+            </p>
+
+            <p style="font-size: 15px; color: #4b5563; margin: 0 0 32px 0;">
+              Best regards,<br>
+              <strong>eLabTrack System</strong>
+            </p>
+
+            <!-- Footer -->
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 32px 0 20px 0;">
+            
+            <p style="font-size: 12px; color: #9ca3af; margin: 0; text-align: center;">
+              This is an automated receipt from eLabTrack Laboratory Management System.<br>
+              Please do not reply to this email. For assistance, visit the laboratory office.
+            </p>
+          </div>
+        </div>
+      `,
+    },
+    userId: transactionData.studentId,
+    type: "transaction_receipt",
+    transactionId: transactionData.transactionId,
+    createdAt: serverTimestamp(),
+  });
 };
 
 export const deleteTransaction = async (transactionId: string) => {

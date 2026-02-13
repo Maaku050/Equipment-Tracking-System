@@ -1,5 +1,6 @@
+// _modals/editEquipmentModal.tsx
 import React, { useState, useEffect } from "react";
-import { Alert, ScrollView, Text } from "react-native";
+import { Alert, ScrollView, Text, Image, View } from "react-native";
 import {
   Modal,
   ModalBackdrop,
@@ -26,9 +27,15 @@ import {
   SelectDragIndicator,
   SelectItem,
 } from "@/components/ui/select";
-import { ChevronDownIcon } from "@/components/ui/icon";
+import { ChevronDownIcon, CloseIcon, Icon } from "@/components/ui/icon";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/firebase/firebaseConfig";
+import {
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
+import { db, storage } from "@/firebase/firebaseConfig";
 import { Equipment } from "@/context/EquipmentContext";
 import {
   FormControl,
@@ -36,6 +43,7 @@ import {
   FormControlError,
 } from "@/components/ui/form-control";
 import { HStack } from "@/components/ui/hstack";
+import * as ImagePicker from "expo-image-picker";
 
 interface EditEquipmentModalProps {
   visible: boolean;
@@ -57,8 +65,11 @@ export default function EditEquipmentModal({
     pricePerUnit: "",
     condition: "good",
     status: "available",
-    imageUrl: "",
   });
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string>("");
+  const [existingImagePath, setExistingImagePath] = useState<string>("");
+  const [imageChanged, setImageChanged] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -71,13 +82,105 @@ export default function EditEquipmentModal({
         pricePerUnit: equipment.pricePerUnit.toString(),
         condition: equipment.condition,
         status: equipment.status,
-        imageUrl: equipment.imageUrl || "",
       });
+      setExistingImageUrl(equipment.imageUrl || "");
+      setExistingImagePath(equipment.imagePath || "");
+      setImageUri(null);
+      setImageChanged(false);
     }
   }, [equipment, visible]);
 
   const handleClose = () => {
+    setImageUri(null);
+    setImageChanged(false);
     onClose();
+  };
+
+  const pickImage = async () => {
+    try {
+      // Request permission
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission Denied",
+          "Sorry, we need camera roll permissions to upload images.",
+        );
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images",
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setImageUri(result.assets[0].uri);
+        setImageChanged(true);
+      }
+    } catch (error) {
+      console.error("Error picking image:", error);
+      Alert.alert("Error", "Failed to pick image");
+    }
+  };
+
+  const removeImage = () => {
+    setImageUri(null);
+    setImageChanged(true);
+  };
+
+  const deleteOldImage = async (imagePath: string) => {
+    if (!imagePath) return;
+
+    try {
+      const imageRef = ref(storage, imagePath);
+      await deleteObject(imageRef);
+      console.log("✅ Old image deleted successfully:", imagePath);
+    } catch (error: any) {
+      // If the file doesn't exist, that's fine
+      if (error.code === "storage/object-not-found") {
+        console.log("ℹ️ Old image not found in storage:", imagePath);
+      } else {
+        console.error("Error deleting old image:", error);
+        // Don't throw error - we still want to proceed with update
+      }
+    }
+  };
+
+  const uploadImage = async (
+    equipmentId: string,
+  ): Promise<{ imageUrl: string; imagePath: string }> => {
+    if (!imageUri) return { imageUrl: "", imagePath: "" };
+
+    try {
+      // Convert image URI to blob
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+
+      // Create a unique filename
+      const filename = `${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+
+      // Create storage path
+      const imagePath = `equipment-images/${equipmentId}/${filename}`;
+
+      // Create storage reference
+      const storageRef = ref(storage, imagePath);
+
+      // Upload the image
+      await uploadBytes(storageRef, blob);
+
+      // Get download URL
+      const downloadURL = await getDownloadURL(storageRef);
+
+      return { imageUrl: downloadURL, imagePath };
+    } catch (error) {
+      console.error("Error uploading image:", error);
+      throw error;
+    }
   };
 
   const validateForm = (): boolean => {
@@ -118,6 +221,31 @@ export default function EditEquipmentModal({
       const newAvailableQuantity =
         equipment.availableQuantity + quantityDifference;
 
+      let finalImageUrl = existingImageUrl;
+      let finalImagePath = existingImagePath;
+
+      // Handle image changes
+      if (imageChanged) {
+        // If there's a new image, upload it
+        if (imageUri) {
+          // Delete old image if exists (using imagePath)
+          if (existingImagePath) {
+            await deleteOldImage(existingImagePath);
+          }
+          // Upload new image
+          const result = await uploadImage(equipment.id);
+          finalImageUrl = result.imageUrl;
+          finalImagePath = result.imagePath;
+        } else {
+          // User removed the image
+          if (existingImagePath) {
+            await deleteOldImage(existingImagePath);
+          }
+          finalImageUrl = "";
+          finalImagePath = "";
+        }
+      }
+
       const equipmentRef = doc(db, "equipment", equipment.id);
       await updateDoc(equipmentRef, {
         name: formData.name,
@@ -127,7 +255,8 @@ export default function EditEquipmentModal({
         pricePerUnit: parseFloat(formData.pricePerUnit),
         condition: formData.condition,
         status: formData.status,
-        imageUrl: formData.imageUrl || equipment.imageUrl,
+        imageUrl: finalImageUrl,
+        imagePath: finalImagePath,
         updatedAt: serverTimestamp(),
       });
 
@@ -144,18 +273,98 @@ export default function EditEquipmentModal({
 
   if (!equipment) return null;
 
+  // Determine which image to show
+  const displayImageUri = imageUri || existingImageUrl;
+
   return (
     <Modal isOpen={visible} onClose={handleClose} size="lg">
       <ModalBackdrop />
-      <ModalContent>
+      <ModalContent className={"max-w-6xl h-[90vh]"}>
         <ModalHeader>
           <Heading size="md">Edit Equipment</Heading>
-          <ModalCloseButton />
+          <ModalCloseButton>
+            <Icon as={CloseIcon} />
+          </ModalCloseButton>
         </ModalHeader>
 
         <ModalBody>
           <HStack space="sm" style={{ flex: 1 }}>
-            <VStack space="md" style={{ flex: 1 }}>
+            {/* Image Upload */}
+            <FormControl style={{ flex: 1 }}>
+              <FormControlLabel>
+                <Text>Equipment Image (Optional)</Text>
+              </FormControlLabel>
+
+              <VStack space="sm">
+                {displayImageUri ? (
+                  <Image
+                    source={{ uri: displayImageUri }}
+                    style={{
+                      width: "100%",
+                      height: 300,
+                      borderRadius: 8,
+                      backgroundColor: "#f0f0f0",
+                    }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View
+                    style={{
+                      width: "100%",
+                      height: 300,
+                      borderRadius: 8,
+                      backgroundColor: "#e5e5e5",
+                      justifyContent: "center",
+                      alignItems: "center",
+                      borderWidth: 2,
+                      borderColor: "#d4d4d4",
+                      borderStyle: "dashed",
+                    }}
+                  >
+                    <Icon
+                      as={Image}
+                      size="xl"
+                      className="text-typography-400 mb-2"
+                    />
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        color: "#737373",
+                        fontWeight: "500",
+                      }}
+                    >
+                      No Image Selected
+                    </Text>
+                  </View>
+                )}
+                <HStack space="sm">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={pickImage}
+                    style={{ flex: 1 }}
+                  >
+                    <ButtonText>
+                      {displayImageUri ? "Change Image" : "Select Image"}
+                    </ButtonText>
+                  </Button>
+                  {displayImageUri && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      action="negative"
+                      onPress={removeImage}
+                      style={{ flex: 1 }}
+                    >
+                      <ButtonText>Remove</ButtonText>
+                    </Button>
+                  )}
+                </HStack>
+              </VStack>
+            </FormControl>
+
+            {/* LEFT COLUMN */}
+            <VStack space="sm" style={{ flex: 1 }}>
               {/* Equipment Name */}
               <FormControl isRequired isInvalid={!!errors.name}>
                 <FormControlLabel>
@@ -179,15 +388,11 @@ export default function EditEquipmentModal({
               </FormControl>
 
               {/* Description */}
-              <FormControl
-                isRequired
-                isInvalid={!!errors.description}
-                style={{ marginTop: 17 }}
-              >
+              <FormControl isRequired isInvalid={!!errors.description}>
                 <FormControlLabel>
                   <Text>Description</Text>
                 </FormControlLabel>
-                <Textarea style={{ minHeight: 115 }}>
+                <Textarea style={{ minHeight: 193 }}>
                   <TextareaInput
                     placeholder="e.g., Fluke 87V Digital Multimeter"
                     value={formData.description}
@@ -203,55 +408,10 @@ export default function EditEquipmentModal({
                   </FormControlError>
                 )}
               </FormControl>
-
-              {/* Image URL */}
-              <FormControl>
-                <FormControlLabel>
-                  <Text>Image URL (Optional)</Text>
-                </FormControlLabel>
-                <Input>
-                  <InputField
-                    placeholder="Enter image URL"
-                    value={formData.imageUrl}
-                    onChangeText={(v) =>
-                      setFormData({ ...formData, imageUrl: v })
-                    }
-                  />
-                </Input>
-              </FormControl>
             </VStack>
-            <VStack space="md" style={{ flex: 1 }}>
-              {/* Total Quantity */}
-              <FormControl isRequired isInvalid={!!errors.totalQuantity}>
-                <FormControlLabel>
-                  <Text>Total Quantity</Text>
-                </FormControlLabel>
-                <Input>
-                  <InputField
-                    placeholder="Enter quantity"
-                    keyboardType="numeric"
-                    value={formData.totalQuantity}
-                    onChangeText={(v) => {
-                      setFormData({ ...formData, totalQuantity: v });
-                      setErrors((e) => ({ ...e, totalQuantity: "" }));
-                    }}
-                  />
-                </Input>
-                {errors.totalQuantity ? (
-                  <FormControlError>
-                    <Text>{errors.totalQuantity}</Text>
-                  </FormControlError>
-                ) : (
-                  <Text
-                    style={{ fontSize: 12 }}
-                    className="text-typography-500"
-                  >
-                    Current borrowed: {equipment.borrowedQuantity} — available
-                    adjusts automatically
-                  </Text>
-                )}
-              </FormControl>
 
+            {/* RIGHT COLUMN */}
+            <VStack space="md" style={{ flex: 1 }}>
               {/* Price Per Unit */}
               <FormControl isRequired isInvalid={!!errors.pricePerUnit}>
                 <FormControlLabel>
@@ -330,6 +490,37 @@ export default function EditEquipmentModal({
                   </SelectPortal>
                 </Select>
               </FormControl>
+
+              {/* Total Quantity */}
+              <FormControl isRequired isInvalid={!!errors.totalQuantity}>
+                <FormControlLabel>
+                  <Text>Total Quantity</Text>
+                </FormControlLabel>
+                <Input>
+                  <InputField
+                    placeholder="Enter quantity"
+                    keyboardType="numeric"
+                    value={formData.totalQuantity}
+                    onChangeText={(v) => {
+                      setFormData({ ...formData, totalQuantity: v });
+                      setErrors((e) => ({ ...e, totalQuantity: "" }));
+                    }}
+                  />
+                </Input>
+                {errors.totalQuantity ? (
+                  <FormControlError>
+                    <Text>{errors.totalQuantity}</Text>
+                  </FormControlError>
+                ) : (
+                  <Text
+                    style={{ fontSize: 12 }}
+                    className="text-typography-500"
+                  >
+                    Current borrowed: {equipment.borrowedQuantity} — available
+                    adjusts automatically
+                  </Text>
+                )}
+              </FormControl>
             </VStack>
           </HStack>
         </ModalBody>
@@ -340,6 +531,7 @@ export default function EditEquipmentModal({
             action="secondary"
             onPress={handleClose}
             className="mr-3"
+            disabled={loading}
           >
             <ButtonText>Cancel</ButtonText>
           </Button>

@@ -18,6 +18,9 @@ export interface BorrowedItem {
   pricePerQuantity: number;
   returned: boolean;
   returnedQuantity: number;
+  damagedQuantity: number;
+  lostQuantity: number;
+  damageNotes?: string;
 }
 
 export interface Record {
@@ -34,6 +37,7 @@ export interface Record {
   finalStatus: RecordStatus;
   totalPrice: number;
   fineAmount: number;
+  finePaid: boolean;
   notes?: string;
   archivedAt: Date;
 }
@@ -46,6 +50,7 @@ export interface RecordsStats {
   completeAndOverdue: number;
   total: number;
   totalFines: number;
+  pendingFines: number;
   totalTransactions: number;
 }
 
@@ -72,6 +77,7 @@ const RecordsContext = createContext<RecordsContextType>({
     completeAndOverdue: 0,
     total: 0,
     totalFines: 0,
+    pendingFines: 0,
     totalTransactions: 0,
   },
   loading: true,
@@ -100,6 +106,7 @@ export const RecordsProvider = ({
     completeAndOverdue: 0,
     total: 0,
     totalFines: 0,
+    pendingFines: 0,
     totalTransactions: 0,
   });
   const [loading, setLoading] = useState(true);
@@ -115,6 +122,7 @@ export const RecordsProvider = ({
       completeAndOverdue: 0,
       total: recordsList.length,
       totalFines: 0,
+      pendingFines: 0,
       totalTransactions: 0,
     };
 
@@ -141,6 +149,11 @@ export const RecordsProvider = ({
       // Sum fines
       newStats.totalFines += record.fineAmount || 0;
 
+      // Sum pending (unpaid) fines
+      if (!record.finePaid && record.fineAmount > 0) {
+        newStats.pendingFines += record.fineAmount;
+      }
+
       // Count unique transactions
       newStats.totalTransactions++;
     });
@@ -164,7 +177,18 @@ export const RecordsProvider = ({
             studentId: data.studentId || "",
             studentName: data.studentName || "",
             studentEmail: data.studentEmail || "",
-            items: data.items || [],
+            items: (data.items || []).map((item: any) => ({
+              id: item.id || "",
+              equipmentId: item.equipmentId || "",
+              itemName: item.itemName || "",
+              quantity: item.quantity || 0,
+              pricePerQuantity: item.pricePerQuantity || 0,
+              returned: item.returned || false,
+              returnedQuantity: item.returnedQuantity || 0,
+              damagedQuantity: item.damagedQuantity || 0,
+              lostQuantity: item.lostQuantity || 0,
+              damageNotes: item.damageNotes || "",
+            })),
             borrowedDate: data.borrowedDate?.toDate?.() || new Date(),
             dueDate: data.dueDate?.toDate?.() || new Date(),
             returnedDate: data.returnedDate?.toDate?.() || new Date(),
@@ -172,6 +196,7 @@ export const RecordsProvider = ({
             finalStatus: (data.finalStatus as RecordStatus) || "Complete",
             totalPrice: data.totalPrice ?? 0,
             fineAmount: data.fineAmount ?? 0,
+            finePaid: data.finePaid ?? false,
             notes: data.notes || "",
             archivedAt: data.archivedAt?.toDate?.() || new Date(),
           };

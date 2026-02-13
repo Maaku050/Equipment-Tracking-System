@@ -1,12 +1,14 @@
-// app/admin/users.tsx | Borrowers Interface
+// app/admin/users.tsx | Users Interface (Updated - FAB Menu)
 import { Button, ButtonIcon, ButtonText } from "@/components/ui/button";
 import {
   Plus,
   Search,
-  Printer,
   Filter,
   CheckIcon,
   PrinterIcon,
+  UserRoundPlus,
+  Upload,
+  UserRoundX,
 } from "lucide-react-native";
 import React, { useState } from "react";
 import {
@@ -16,6 +18,7 @@ import {
   View,
   Platform,
   StyleSheet,
+  Animated,
 } from "react-native";
 import { Grid, GridItem } from "@/components/ui/grid";
 import { Card } from "@/components/ui/card";
@@ -25,7 +28,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Badge, BadgeText } from "@/components/ui/badge";
 import AddUserModal from "@/_modals/addUserModal";
 import UserDetailsModal from "@/_modals/userDetailsModal";
-import { Fab, FabIcon, FabLabel } from "@/components/ui/fab";
+import BulkImportUsersModal from "@/_modals/BulkImportUsersModal";
+import BulkDeleteUsersModal from "@/_modals/BulkDeleteUsersModal";
 import { useUsers } from "@/context/UsersContext";
 import { Center } from "@/components/ui/center";
 import { useEffect, useMemo } from "react";
@@ -49,16 +53,18 @@ import {
   Checkbox,
   CheckboxIndicator,
   CheckboxIcon,
-  CheckboxLabel,
 } from "@/components/ui/checkbox";
 
 export default function UsersInterface() {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [userFines, setUserFines] = useState<Record<string, number>>({});
   const [loadingFines, setLoadingFines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [fabMenuOpen, setFabMenuOpen] = useState(false);
 
   // Filter modal states
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -122,6 +128,25 @@ export default function UsersInterface() {
     // Refresh users list after update
     if (refreshUsers) {
       refreshUsers();
+    }
+  };
+
+  const toggleFabMenu = () => {
+    setFabMenuOpen(!fabMenuOpen);
+  };
+
+  const handleFabAction = (action: "add" | "import" | "delete") => {
+    setFabMenuOpen(false);
+    switch (action) {
+      case "add":
+        setShowAddUserModal(true);
+        break;
+      case "import":
+        setShowBulkImportModal(true);
+        break;
+      case "delete":
+        setShowBulkDeleteModal(true);
+        break;
     }
   };
 
@@ -218,8 +243,8 @@ export default function UsersInterface() {
           />
           <h3 class="user-name">${user.name}</h3>
           <p class="user-email">${user.email}</p>
-          ${user.contactNumber ? `<p class="user-detail">📱 ${user.contactNumber}</p>` : ""}
-          ${user.course ? `<p class="user-detail">📚 ${user.course}</p>` : ""}
+          ${user.contactNumber && user.contactNumber !== "N/A" ? `<p class="user-detail">📱 ${user.contactNumber}</p>` : ""}
+          ${user.course && user.course !== "N/A" ? `<p class="user-detail">📚 ${user.course}</p>` : ""}
           <div class="badges">
             <span class="badge ${user.status === "active" ? "badge-success" : "badge-error"}">
               ${user.status === "active" ? "✓ ACTIVE" : "✕ INACTIVE"}
@@ -373,7 +398,7 @@ export default function UsersInterface() {
 
   return (
     <AdminGuard>
-      <ScrollView style={{ padding: 15 }}>
+      <ScrollView style={{ padding: 15 }} showsVerticalScrollIndicator={false}>
         {/* Search Bar, Filter and Print Buttons */}
         <View className="mb-4" style={{ flexDirection: "row", gap: 8 }}>
           <View style={{ flex: 1 }}>
@@ -419,12 +444,12 @@ export default function UsersInterface() {
           <Center className="flex-1 py-20">
             <Text className="text-typography-500 text-lg">No users found</Text>
             <Button
-              size="sm"
+              size="md"
               onPress={() => setShowAddUserModal(true)}
               className="mt-4"
             >
               <ButtonIcon as={Plus} />
-              <ButtonText>Add First Student</ButtonText>
+              <ButtonText>Add User</ButtonText>
             </Button>
           </Center>
         ) : filteredUsers.length === 0 ? (
@@ -471,12 +496,12 @@ export default function UsersInterface() {
                     <Text className="text-sm font-normal mb-2 text-typography-700">
                       {user.email}
                     </Text>
-                    {user.contactNumber && (
+                    {user.contactNumber && user.contactNumber !== "N/A" && (
                       <Text className="text-sm text-typography-600 mb-1">
                         📱 {user.contactNumber}
                       </Text>
                     )}
-                    {user.course && (
+                    {user.course && user.course !== "N/A" && (
                       <Text className="text-sm text-typography-600 mb-1">
                         📚 {user.course}
                       </Text>
@@ -513,12 +538,36 @@ export default function UsersInterface() {
           </Grid>
         )}
 
-        {/* Add User Modal */}
+        {/* Add User Modal (simplified without bulk actions) */}
         <AddUserModal
           visible={showAddUserModal}
           onClose={() => setShowAddUserModal(false)}
           onSuccess={() => {
             setShowAddUserModal(false);
+            if (refreshUsers) {
+              refreshUsers();
+            }
+          }}
+        />
+
+        {/* Bulk Import Modal */}
+        <BulkImportUsersModal
+          visible={showBulkImportModal}
+          onClose={() => setShowBulkImportModal(false)}
+          onSuccess={() => {
+            setShowBulkImportModal(false);
+            if (refreshUsers) {
+              refreshUsers();
+            }
+          }}
+        />
+
+        {/* Bulk Delete Modal */}
+        <BulkDeleteUsersModal
+          visible={showBulkDeleteModal}
+          onClose={() => setShowBulkDeleteModal(false)}
+          onSuccess={() => {
+            setShowBulkDeleteModal(false);
             if (refreshUsers) {
               refreshUsers();
             }
@@ -726,17 +775,64 @@ export default function UsersInterface() {
         </Modal>
       </ScrollView>
 
-      <Fab
-        size="sm"
-        placement="bottom right"
-        isHovered={false}
-        isDisabled={false}
-        isPressed={false}
-        onPress={() => setShowAddUserModal(true)}
-      >
-        <FabIcon as={Plus} />
-        <FabLabel>Add Student</FabLabel>
-      </Fab>
+      {/* FAB Menu */}
+      <View style={styles.fabContainer}>
+        {/* Menu Options - Show when open */}
+        {fabMenuOpen && (
+          <View style={styles.fabMenu}>
+            {/* Bulk Delete Option */}
+            <TouchableOpacity
+              style={styles.fabMenuItem}
+              onPress={() => handleFabAction("delete")}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.fabMenuButton, styles.fabDeleteButton]}>
+                <UserRoundX size={24} color="#ffffff" />
+              </View>
+              <Text style={styles.fabMenuLabel}>Bulk Delete</Text>
+            </TouchableOpacity>
+
+            {/* Bulk Import Option */}
+            <TouchableOpacity
+              style={styles.fabMenuItem}
+              onPress={() => handleFabAction("import")}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.fabMenuButton, styles.fabImportButton]}>
+                <Upload size={24} color="#ffffff" />
+              </View>
+              <Text style={styles.fabMenuLabel}>Bulk Import</Text>
+            </TouchableOpacity>
+
+            {/* Add User Option */}
+            <TouchableOpacity
+              style={styles.fabMenuItem}
+              onPress={() => handleFabAction("add")}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.fabMenuButton, styles.fabAddButton]}>
+                <UserRoundPlus size={24} color="#ffffff" />
+              </View>
+              <Text style={styles.fabMenuLabel}>Add User</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Main FAB Button */}
+        <TouchableOpacity
+          style={[styles.fab, fabMenuOpen && styles.fabActive]}
+          onPress={toggleFabMenu}
+          activeOpacity={0.9}
+        >
+          <Animated.View
+            style={{
+              transform: [{ rotate: fabMenuOpen ? "45deg" : "0deg" }],
+            }}
+          >
+            <Plus size={28} color="#ffffff" />
+          </Animated.View>
+        </TouchableOpacity>
+      </View>
     </AdminGuard>
   );
 }
@@ -786,5 +882,73 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     marginLeft: 6,
+  },
+  // FAB Styles
+  fabContainer: {
+    position: "absolute",
+    bottom: 20,
+    right: 20,
+    alignItems: "flex-end",
+  },
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#3b82f6",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  fabActive: {
+    backgroundColor: "#2563eb",
+  },
+  fabMenu: {
+    marginBottom: 16,
+    alignItems: "flex-end",
+    gap: 12,
+  },
+  fabMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  fabMenuButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+  },
+  fabAddButton: {
+    backgroundColor: "#3b82f6",
+  },
+  fabImportButton: {
+    backgroundColor: "#10b981",
+  },
+  fabDeleteButton: {
+    backgroundColor: "#ef4444",
+  },
+  fabMenuLabel: {
+    backgroundColor: "#ffffff",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1f2937",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
 });

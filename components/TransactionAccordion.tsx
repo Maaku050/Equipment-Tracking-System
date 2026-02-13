@@ -30,6 +30,7 @@ import {
   CheckboxIcon,
 } from "@/components/ui/checkbox";
 import { Input, InputField } from "@/components/ui/input";
+import { Textarea, TextareaInput } from "@/components/ui/textarea";
 import {
   Modal,
   ModalBackdrop,
@@ -55,6 +56,7 @@ import {
   AlertCircle,
   CheckCircle,
   Calendar,
+  AlertTriangle,
 } from "lucide-react-native";
 
 interface Transaction {
@@ -65,26 +67,34 @@ interface Transaction {
   dueDate: Date;
   borrowedDate: Date;
   items: BorrowedItem[];
-  status?: string; // For active transactions
-  finalStatus?: string; // For completed records
+  status?: string;
+  finalStatus?: string;
   totalPrice: number;
-  fineAmount?: number; // For records
-  completedDate?: Date; // For records
-  returnedDate?: Date; // For records
-  notes?: string; // For records
+  fineAmount?: number;
+  completedDate?: Date;
+  returnedDate?: Date;
+  notes?: string;
 }
 
 interface TransactionAccordionProps {
   transactions: Transaction[];
   onComplete?: (
     transactionId: string,
-    itemReturnStates: { [key: string]: { checked: boolean; quantity: number } },
+    itemReturnStates: {
+      [key: string]: {
+        checked: boolean;
+        quantity: number;
+        damagedQuantity: number;
+        lostQuantity: number;
+        damageNotes: string;
+      };
+    },
   ) => Promise<void>;
   onDelete?: (transactionId: string) => Promise<void>;
   onApprove?: (transactionId: string) => Promise<void>;
   onDeny?: (transactionId: string) => Promise<void>;
   loading?: boolean;
-  isUserView?: boolean; // New prop to distinguish user view from admin view
+  isUserView?: boolean;
 }
 
 type ConfirmActionType = "delete" | "approve" | "deny" | "complete";
@@ -96,7 +106,7 @@ export default function TransactionAccordion({
   onApprove,
   onDeny,
   loading = false,
-  isUserView = false, // Default to admin view
+  isUserView = false,
 }: TransactionAccordionProps) {
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
@@ -104,7 +114,13 @@ export default function TransactionAccordion({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [returnAll, setReturnAll] = useState(false);
   const [itemReturnStates, setItemReturnStates] = useState<{
-    [key: string]: { checked: boolean; quantity: number };
+    [key: string]: {
+      checked: boolean;
+      quantity: number;
+      damagedQuantity: number;
+      lostQuantity: number;
+      damageNotes: string;
+    };
   }>({});
 
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -177,25 +193,51 @@ export default function TransactionAccordion({
   };
 
   const openCompleteModal = (transaction: Transaction) => {
-    setSelectedTransaction(transaction);
-    const initialStates: {
-      [key: string]: { checked: boolean; quantity: number };
-    } = {};
-
-    // Check if all items are already returned to set initial returnAll state
-    let allReturned = true;
-    transaction.items.forEach((item) => {
-      const isFullyReturned = item.returnedQuantity === item.quantity;
-      initialStates[item.id] = {
-        checked: item.returned || isFullyReturned,
-        quantity: item.returnedQuantity || 0,
-      };
-      if (!isFullyReturned) {
-        allReturned = false;
-      }
+    // Filter out fully returned items
+    const incompleteItems = transaction.items.filter((item) => {
+      const returned = item.returnedQuantity || 0;
+      return returned < item.quantity; // Only show items that aren't fully returned
     });
 
-    setReturnAll(allReturned);
+    // If all items are returned, this shouldn't happen, but handle it gracefully
+    if (incompleteItems.length === 0) {
+      Alert.alert(
+        "All Items Returned",
+        "All items in this transaction have already been returned.",
+      );
+      return;
+    }
+
+    // Create a filtered transaction object with only incomplete items
+    const filteredTransaction = {
+      ...transaction,
+      items: incompleteItems,
+    };
+
+    setSelectedTransaction(filteredTransaction);
+
+    const initialStates: {
+      [key: string]: {
+        checked: boolean;
+        quantity: number;
+        damagedQuantity: number;
+        lostQuantity: number;
+        damageNotes: string;
+      };
+    } = {};
+
+    incompleteItems.forEach((item) => {
+      const remaining = item.quantity - (item.returnedQuantity || 0);
+      initialStates[item.id] = {
+        checked: false,
+        quantity: 0, // Start at 0 - admin enters the quantity being returned THIS time
+        damagedQuantity: 0, // Start at 0 - this is for NEW damage in this submission
+        lostQuantity: 0, // Start at 0 - this is for NEW lost items in this submission
+        damageNotes: item.damageNotes || "", // Keep existing notes
+      };
+    });
+
+    setReturnAll(false);
     setItemReturnStates(initialStates);
     setShowCompleteModal(true);
   };
@@ -206,11 +248,16 @@ export default function TransactionAccordion({
     const item = selectedTransaction.items.find((i) => i.id === itemId);
     if (!item) return;
 
+    const remaining = item.quantity - (item.returnedQuantity || 0);
+
     setItemReturnStates((prev) => ({
       ...prev,
       [itemId]: {
         checked,
-        quantity: checked ? item.quantity : 0,
+        quantity: checked ? remaining : 0, // Set to full remaining quantity when checked
+        damagedQuantity: 0, // Reset damage/lost when marking as returned
+        lostQuantity: 0,
+        damageNotes: "",
       },
     }));
   };
@@ -219,14 +266,49 @@ export default function TransactionAccordion({
     if (!selectedTransaction) return;
 
     const numQuantity = parseInt(quantity) || 0;
-    const item = selectedTransaction.items.find((i) => i.id === itemId);
-    if (!item) return;
 
     setItemReturnStates((prev) => ({
       ...prev,
       [itemId]: {
-        checked: numQuantity > 0,
+        ...prev[itemId],
+        checked: false, // Uncheck when manually changing quantity (indicates partial/custom return)
         quantity: numQuantity,
+      },
+    }));
+  };
+
+  const handleDamagedQuantityChange = (itemId: string, quantity: string) => {
+    const numQuantity = parseInt(quantity) || 0;
+
+    setItemReturnStates((prev) => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        checked: false, // Uncheck when adding damage (not a perfect return)
+        damagedQuantity: numQuantity,
+      },
+    }));
+  };
+
+  const handleLostQuantityChange = (itemId: string, quantity: string) => {
+    const numQuantity = parseInt(quantity) || 0;
+
+    setItemReturnStates((prev) => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        checked: false, // Uncheck when adding lost items (not a perfect return)
+        lostQuantity: numQuantity,
+      },
+    }));
+  };
+
+  const handleDamageNotesChange = (itemId: string, notes: string) => {
+    setItemReturnStates((prev) => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        damageNotes: notes,
       },
     }));
   };
@@ -237,26 +319,43 @@ export default function TransactionAccordion({
     setReturnAll(checked);
 
     if (checked) {
-      // Mark all items as returned with full quantity
       const newStates: {
-        [key: string]: { checked: boolean; quantity: number };
+        [key: string]: {
+          checked: boolean;
+          quantity: number;
+          damagedQuantity: number;
+          lostQuantity: number;
+          damageNotes: string;
+        };
       } = {};
       selectedTransaction.items.forEach((item) => {
+        const remaining = item.quantity - (item.returnedQuantity || 0);
         newStates[item.id] = {
           checked: true,
-          quantity: item.quantity,
+          quantity: remaining, // Full return of remaining items
+          damagedQuantity: 0,
+          lostQuantity: 0,
+          damageNotes: "",
         };
       });
       setItemReturnStates(newStates);
     } else {
-      // Reset to previous state (keeping previously returned items)
       const resetStates: {
-        [key: string]: { checked: boolean; quantity: number };
+        [key: string]: {
+          checked: boolean;
+          quantity: number;
+          damagedQuantity: number;
+          lostQuantity: number;
+          damageNotes: string;
+        };
       } = {};
       selectedTransaction.items.forEach((item) => {
         resetStates[item.id] = {
-          checked: item.returned || item.returnedQuantity > 0,
-          quantity: item.returnedQuantity || 0,
+          checked: false, // Reset to unchecked
+          quantity: 0, // Reset to 0
+          damagedQuantity: item.damagedQuantity || 0,
+          lostQuantity: item.lostQuantity || 0,
+          damageNotes: item.damageNotes || "",
         };
       });
       setItemReturnStates(resetStates);
@@ -266,27 +365,35 @@ export default function TransactionAccordion({
   const handleCompleteTransaction = async () => {
     if (!selectedTransaction || !onComplete) return;
 
-    const invalidItems = Object.entries(itemReturnStates).filter(
-      ([itemId, state]) => state.checked && state.quantity === 0,
-    );
-
-    if (invalidItems.length > 0) {
-      Alert.alert(
-        "Validation Error",
-        "Please enter a quantity for all checked items.",
-      );
-      return;
-    }
-
+    // Validate that total quantities don't exceed remaining borrowed quantity
     const exceedingItems = selectedTransaction.items.filter((item) => {
       const state = itemReturnStates[item.id];
-      return state && state.quantity > item.quantity;
+      if (!state) return false;
+
+      const total = state.quantity + state.damagedQuantity + state.lostQuantity;
+      const remaining = item.quantity - (item.returnedQuantity || 0);
+      return total > remaining;
     });
 
     if (exceedingItems.length > 0) {
       Alert.alert(
         "Validation Error",
-        "Returned quantity cannot exceed borrowed quantity.",
+        "Total of returned + damaged + lost quantities cannot exceed remaining borrowed quantity.",
+      );
+      return;
+    }
+
+    // Check if damage notes are required when there are damaged items
+    const missingDamageNotes = Object.entries(itemReturnStates).filter(
+      ([itemId, state]) =>
+        (state.damagedQuantity > 0 || state.lostQuantity > 0) &&
+        !state.damageNotes.trim(),
+    );
+
+    if (missingDamageNotes.length > 0) {
+      Alert.alert(
+        "Validation Error",
+        "Please provide damage notes for all damaged or lost items.",
       );
       return;
     }
@@ -306,24 +413,25 @@ export default function TransactionAccordion({
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Request":
-        return "#f59e0b";
+        return "#f59e0b"; // Amber - awaiting approval
       case "Ongoing":
-        return "#3b82f6";
+        return "#3b82f6"; // Blue - active
       case "Ondue":
-        return "#f59e0b"; // Amber/Orange to indicate urgency but not yet overdue
+        return "#f59e0b"; // Amber - due today
       case "Overdue":
-        return "#ef4444";
+        return "#ef4444"; // Red - late
       case "Incomplete":
-        return "#f97316";
+        return "#f97316"; // Orange - partial return
       case "Incomplete and Ondue":
-        return "#ea580c"; // Slightly darker orange for incomplete + ondue
+        return "#ea580c"; // Dark orange
       case "Incomplete and Overdue":
-        return "#dc2626";
+        return "#dc2626"; // Dark red
       case "Complete":
+        return "#10b981"; // Green
       case "Complete and Overdue":
-        return "#10b981";
+        return "#f59e0b"; // Amber - completed but was late
       default:
-        return "#6b7280";
+        return "#6b7280"; // Gray
     }
   };
 
@@ -334,7 +442,7 @@ export default function TransactionAccordion({
       case "Ongoing":
         return AlertCircle;
       case "Ondue":
-        return Calendar; // Calendar icon for "due today"
+        return Calendar;
       case "Overdue":
         return AlertCircle;
       case "Incomplete":
@@ -350,16 +458,20 @@ export default function TransactionAccordion({
     }
   };
 
-  const getReturnStatusText = (itemId: string) => {
-    const state = itemReturnStates[itemId];
-    const item = selectedTransaction?.items.find((i) => i.id === itemId);
-    if (!state || !item) return "";
+  const calculateTotalFine = () => {
+    if (!selectedTransaction) return 0;
 
-    if (state.quantity === 0) return "";
-    if (state.quantity === item.quantity) {
-      return "(Complete Return)";
-    }
-    return "(Partial Return)";
+    let damageLostFine = 0;
+
+    Object.entries(itemReturnStates).forEach(([itemId, state]) => {
+      const item = selectedTransaction.items.find((i) => i.id === itemId);
+      if (item) {
+        damageLostFine +=
+          (state.damagedQuantity + state.lostQuantity) * item.pricePerQuantity;
+      }
+    });
+
+    return damageLostFine;
   };
 
   if (loading) {
@@ -397,7 +509,6 @@ export default function TransactionAccordion({
         style={{ backgroundColor: "transparent" }}
       >
         {transactions.map((transaction) => {
-          // Determine if this is a record or active transaction
           const isRecord = !!transaction.finalStatus;
           const displayStatus = isRecord
             ? transaction.finalStatus
@@ -432,8 +543,8 @@ export default function TransactionAccordion({
                                     backgroundColor:
                                       transaction.fineAmount &&
                                       transaction.fineAmount > 0
-                                        ? "#ef4444" // Red if there's a fine
-                                        : getStatusColor(displayStatus || ""), // Otherwise use the normal status color
+                                        ? "#ef4444"
+                                        : getStatusColor(displayStatus || ""),
                                   }}
                                 >
                                   <HStack
@@ -499,7 +610,6 @@ export default function TransactionAccordion({
               </AccordionHeader>
               <AccordionContent style={styles.accordionContent}>
                 <VStack style={styles.contentVStack}>
-                  {/* Items List */}
                   <Text style={styles.sectionTitle}>Equipment Items</Text>
                   {transaction.items.map((item, index) => (
                     <HStack key={item.id} style={styles.itemRow}>
@@ -526,11 +636,44 @@ export default function TransactionAccordion({
                             </Text>
                           </HStack>
                         )}
+                        {(item.damagedQuantity > 0 ||
+                          item.lostQuantity > 0) && (
+                          <VStack style={{ marginTop: 8, gap: 4 }}>
+                            {item.damagedQuantity > 0 && (
+                              <HStack style={{ alignItems: "center", gap: 4 }}>
+                                <AlertTriangle size={14} color="#f59e0b" />
+                                <Text style={styles.damagedInfo}>
+                                  Damaged: {item.damagedQuantity} (₱
+                                  {(
+                                    item.damagedQuantity * item.pricePerQuantity
+                                  ).toFixed(2)}
+                                  )
+                                </Text>
+                              </HStack>
+                            )}
+                            {item.lostQuantity > 0 && (
+                              <HStack style={{ alignItems: "center", gap: 4 }}>
+                                <AlertTriangle size={14} color="#ef4444" />
+                                <Text style={styles.lostInfo}>
+                                  Lost: {item.lostQuantity} (₱
+                                  {(
+                                    item.lostQuantity * item.pricePerQuantity
+                                  ).toFixed(2)}
+                                  )
+                                </Text>
+                              </HStack>
+                            )}
+                            {item.damageNotes && (
+                              <Text style={styles.damageNotes}>
+                                Note: {item.damageNotes}
+                              </Text>
+                            )}
+                          </VStack>
+                        )}
                       </VStack>
                     </HStack>
                   ))}
 
-                  {/* Total */}
                   <HStack style={styles.totalRow}>
                     <Text style={styles.totalLabel}>Total Amount:</Text>
                     <Text style={styles.totalPrice}>
@@ -538,7 +681,6 @@ export default function TransactionAccordion({
                     </Text>
                   </HStack>
 
-                  {/* Fine Amount (for records) */}
                   {isRecord &&
                     transaction.fineAmount &&
                     transaction.fineAmount > 0 && (
@@ -550,7 +692,6 @@ export default function TransactionAccordion({
                       </HStack>
                     )}
 
-                  {/* Notes (for records) */}
                   {isRecord && transaction.notes && (
                     <Box style={styles.notesBox}>
                       <Text style={styles.notesLabel}>Notes:</Text>
@@ -558,7 +699,6 @@ export default function TransactionAccordion({
                     </Box>
                   )}
 
-                  {/* User View - Information Only */}
                   {isUserView && (
                     <Box style={styles.infoBox}>
                       {displayStatus === "Request" && (
@@ -618,7 +758,6 @@ export default function TransactionAccordion({
                     </Box>
                   )}
 
-                  {/* Admin Action Buttons - Only shown in admin view for active transactions */}
                   {!isUserView && !isRecord && (
                     <>
                       {displayStatus === "Request" ? (
@@ -671,7 +810,7 @@ export default function TransactionAccordion({
         })}
       </Accordion>
 
-      {/* Complete Transaction Modal - Admin Only */}
+      {/* Complete Transaction Modal */}
       {!isUserView && onComplete && (
         <Modal
           isOpen={showCompleteModal}
@@ -694,7 +833,6 @@ export default function TransactionAccordion({
                   Mark returned items for {selectedTransaction?.studentName}
                 </Text>
 
-                {/* Return All Checkbox - Prominent at the top */}
                 <Box style={styles.returnAllContainer}>
                   <Checkbox
                     value={returnAll ? "checked" : ""}
@@ -707,28 +845,29 @@ export default function TransactionAccordion({
                       <CheckboxIcon as={Check} />
                     </CheckboxIndicator>
                     <CheckboxLabel style={styles.returnAllLabel}>
-                      Return All Items
+                      Return All Remaining Items (No Damage)
                     </CheckboxLabel>
                   </Checkbox>
                   <Text style={styles.returnAllDescription}>
-                    Quickly mark all items as fully returned
+                    Quickly mark all remaining items as returned in good
+                    condition
                   </Text>
                 </Box>
 
-                {/* Divider */}
                 <Box style={styles.divider} />
 
-                {/* Items List */}
                 <Text style={styles.itemsListTitle}>Individual Items</Text>
                 <View>
                   {selectedTransaction?.items.map((item, index) => {
                     const state = itemReturnStates[item.id];
                     const remaining =
                       item.quantity - (item.returnedQuantity || 0);
+                    const hasDamageOrLoss =
+                      (state?.damagedQuantity || 0) > 0 ||
+                      (state?.lostQuantity || 0) > 0;
 
                     return (
                       <Box key={item.id} style={styles.modalItem}>
-                        {/* Item Header */}
                         <HStack style={styles.itemHeader}>
                           <Text style={styles.itemIndexNumber}>
                             {index + 1}
@@ -742,11 +881,15 @@ export default function TransactionAccordion({
                               {item.returnedQuantity || 0} | Remaining:{" "}
                               {remaining}
                             </Text>
+                            <Text style={styles.itemPriceInfo}>
+                              Price per unit: ₱
+                              {item.pricePerQuantity.toFixed(2)}
+                            </Text>
                           </VStack>
                         </HStack>
 
-                        {/* Return Input Section */}
                         <Box style={styles.returnInputSection}>
+                          {/* Mark as Returned Checkbox - Indicates perfect return */}
                           <Checkbox
                             value={state?.checked ? "checked" : ""}
                             isChecked={state?.checked || false}
@@ -760,50 +903,157 @@ export default function TransactionAccordion({
                               <CheckboxIcon as={Check} />
                             </CheckboxIndicator>
                             <CheckboxLabel style={styles.checkboxLabel}>
-                              Mark as returned
+                              ✓ Fully returned (no damage/loss)
                             </CheckboxLabel>
                           </Checkbox>
 
-                          {state?.checked && (
-                            <HStack style={styles.quantityInputRow}>
-                              <Text style={styles.quantityLabel}>
-                                Quantity returned:
-                              </Text>
-                              <Input style={styles.quantityInputField}>
-                                <InputField
-                                  value={String(state?.quantity || 0)}
-                                  onChangeText={(text) =>
-                                    handleQuantityChange(item.id, text)
-                                  }
-                                  keyboardType="numeric"
-                                  placeholder="0"
-                                  editable={!isSubmitting}
-                                />
-                              </Input>
-                              <Text style={styles.quantityTotal}>
-                                / {item.quantity}
-                              </Text>
-                            </HStack>
+                          {/* Show manual inputs when NOT checked (for partial/damaged returns) */}
+                          {!state?.checked && (
+                            <>
+                              <HStack style={styles.quantityInputRow}>
+                                <Text style={styles.quantityLabel}>
+                                  Quantity returned:
+                                </Text>
+                                <Input style={styles.quantityInputField}>
+                                  <InputField
+                                    value={String(state?.quantity || 0)}
+                                    onChangeText={(text) =>
+                                      handleQuantityChange(item.id, text)
+                                    }
+                                    keyboardType="numeric"
+                                    placeholder="0"
+                                    editable={!isSubmitting}
+                                  />
+                                </Input>
+                                <Text style={styles.quantityTotal}>
+                                  / {remaining}
+                                </Text>
+                              </HStack>
+
+                              {/* Damage/Lost Section */}
+                              <Box style={styles.damageLostSection}>
+                                <Text style={styles.damageLostTitle}>
+                                  Damage/Lost Items (Optional)
+                                </Text>
+
+                                <HStack style={styles.damageInputRow}>
+                                  <VStack style={{ flex: 1 }}>
+                                    <Text style={styles.damageInputLabel}>
+                                      Damaged:
+                                    </Text>
+                                    <Input style={styles.damageInputField}>
+                                      <InputField
+                                        value={String(
+                                          state?.damagedQuantity || 0,
+                                        )}
+                                        onChangeText={(text) =>
+                                          handleDamagedQuantityChange(
+                                            item.id,
+                                            text,
+                                          )
+                                        }
+                                        keyboardType="numeric"
+                                        placeholder="0"
+                                        editable={!isSubmitting}
+                                      />
+                                    </Input>
+                                    {state.damagedQuantity > 0 && (
+                                      <Text style={styles.damageFineText}>
+                                        Fine: ₱
+                                        {(
+                                          state.damagedQuantity *
+                                          item.pricePerQuantity
+                                        ).toFixed(2)}
+                                      </Text>
+                                    )}
+                                  </VStack>
+
+                                  <VStack style={{ flex: 1 }}>
+                                    <Text style={styles.damageInputLabel}>
+                                      Lost:
+                                    </Text>
+                                    <Input style={styles.damageInputField}>
+                                      <InputField
+                                        value={String(state?.lostQuantity || 0)}
+                                        onChangeText={(text) =>
+                                          handleLostQuantityChange(
+                                            item.id,
+                                            text,
+                                          )
+                                        }
+                                        keyboardType="numeric"
+                                        placeholder="0"
+                                        editable={!isSubmitting}
+                                      />
+                                    </Input>
+                                    {state.lostQuantity > 0 && (
+                                      <Text style={styles.damageFineText}>
+                                        Fine: ₱
+                                        {(
+                                          state.lostQuantity *
+                                          item.pricePerQuantity
+                                        ).toFixed(2)}
+                                      </Text>
+                                    )}
+                                  </VStack>
+                                </HStack>
+
+                                {hasDamageOrLoss && (
+                                  <VStack style={{ marginTop: 12 }}>
+                                    <Text style={styles.damageNotesLabel}>
+                                      Damage/Loss Notes: *
+                                    </Text>
+                                    <Textarea style={styles.damageNotesInput}>
+                                      <TextareaInput
+                                        value={state?.damageNotes || ""}
+                                        onChangeText={(text) =>
+                                          handleDamageNotesChange(item.id, text)
+                                        }
+                                        placeholder="Describe the damage or loss..."
+                                        editable={!isSubmitting}
+                                        multiline
+                                        numberOfLines={3}
+                                      />
+                                    </Textarea>
+                                  </VStack>
+                                )}
+                              </Box>
+
+                              {/* Status Indicator for manual entries */}
+                              {state?.quantity > 0 && (
+                                <HStack style={styles.statusIndicator}>
+                                  {state.quantity === remaining &&
+                                  !hasDamageOrLoss ? (
+                                    <>
+                                      <CheckCircle size={16} color="#10b981" />
+                                      <Text style={styles.completeReturnText}>
+                                        Complete Return
+                                      </Text>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <AlertCircle size={16} color="#f59e0b" />
+                                      <Text style={styles.partialReturnText}>
+                                        {state.quantity < remaining
+                                          ? `Partial Return (${state.quantity}/${remaining})`
+                                          : `Return (${state.quantity}/${remaining})`}
+                                        {hasDamageOrLoss && " with damage/loss"}
+                                      </Text>
+                                    </>
+                                  )}
+                                </HStack>
+                              )}
+                            </>
                           )}
 
-                          {state?.checked && state?.quantity > 0 && (
+                          {/* Show status when checked */}
+                          {state?.checked && (
                             <HStack style={styles.statusIndicator}>
-                              {state.quantity === item.quantity ? (
-                                <>
-                                  <CheckCircle size={16} color="#10b981" />
-                                  <Text style={styles.completeReturnText}>
-                                    Complete Return
-                                  </Text>
-                                </>
-                              ) : (
-                                <>
-                                  <AlertCircle size={16} color="#f59e0b" />
-                                  <Text style={styles.partialReturnText}>
-                                    Partial Return ({state.quantity}/
-                                    {item.quantity})
-                                  </Text>
-                                </>
-                              )}
+                              <CheckCircle size={16} color="#10b981" />
+                              <Text style={styles.completeReturnText}>
+                                ✓ Complete Return ({remaining}/{remaining} - No
+                                damage)
+                              </Text>
                             </HStack>
                           )}
                         </Box>
@@ -811,6 +1061,30 @@ export default function TransactionAccordion({
                     );
                   })}
                 </View>
+
+                {/* Total Fine Summary */}
+                {calculateTotalFine() > 0 && (
+                  <Box style={styles.totalFineBox}>
+                    <HStack
+                      style={{
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <VStack>
+                        <Text style={styles.totalFineLabel}>
+                          Total Damage/Lost Fine:
+                        </Text>
+                        <Text style={styles.totalFineSubtext}>
+                          (This will be added to any late fees)
+                        </Text>
+                      </VStack>
+                      <Text style={styles.totalFineAmount}>
+                        ₱{calculateTotalFine().toFixed(2)}
+                      </Text>
+                    </HStack>
+                  </Box>
+                )}
               </VStack>
             </ModalBody>
             <ModalFooter>
@@ -1059,6 +1333,22 @@ const styles = StyleSheet.create({
     color: "#10b981",
     fontWeight: "600",
   },
+  damagedInfo: {
+    fontSize: 12,
+    color: "#f59e0b",
+    fontWeight: "600",
+  },
+  lostInfo: {
+    fontSize: 12,
+    color: "#ef4444",
+    fontWeight: "600",
+  },
+  damageNotes: {
+    fontSize: 11,
+    color: "#6b7280",
+    fontStyle: "italic",
+    marginLeft: 18,
+  },
   totalRow: {
     justifyContent: "space-between",
     paddingTop: 16,
@@ -1143,7 +1433,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#ef4444",
   },
   modalContent: {
-    maxHeight: "85%",
+    maxHeight: "90%",
   },
   modalTitle: {
     fontSize: 20,
@@ -1193,8 +1483,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   modalItem: {
-    marginBottom: 16,
-    paddingBottom: 16,
+    marginBottom: 20,
+    paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
     gap: 12,
@@ -1221,6 +1511,11 @@ const styles = StyleSheet.create({
   itemQuantityInfo: {
     fontSize: 12,
     color: "#6b7280",
+  },
+  itemPriceInfo: {
+    fontSize: 12,
+    color: "#3b82f6",
+    fontWeight: "600",
   },
   returnInputSection: {
     marginLeft: 36,
@@ -1256,6 +1551,55 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontWeight: "600",
   },
+  damageLostSection: {
+    backgroundColor: "#fef2f2",
+    padding: 12,
+    borderRadius: 8,
+    marginLeft: 8,
+    marginTop: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: "#ef4444",
+  },
+  damageLostTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#991b1b",
+    marginBottom: 12,
+  },
+  damageInputRow: {
+    gap: 12,
+  },
+  damageInputLabel: {
+    fontSize: 12,
+    color: "#6b7280",
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  damageInputField: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 6,
+    backgroundColor: "#ffffff",
+  },
+  damageFineText: {
+    fontSize: 11,
+    color: "#dc2626",
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  damageNotesLabel: {
+    fontSize: 12,
+    color: "#6b7280",
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  damageNotesInput: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 6,
+    backgroundColor: "#ffffff",
+    minHeight: 60,
+  },
   statusIndicator: {
     alignItems: "center",
     gap: 6,
@@ -1270,6 +1614,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#f59e0b",
     fontWeight: "600",
+  },
+  totalFineBox: {
+    backgroundColor: "#fef2f2",
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 16,
+    borderWidth: 2,
+    borderColor: "#fecaca",
+  },
+  totalFineLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#991b1b",
+  },
+  totalFineSubtext: {
+    fontSize: 11,
+    color: "#dc2626",
+    marginTop: 2,
+  },
+  totalFineAmount: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#dc2626",
   },
   modalActions: {
     gap: 12,

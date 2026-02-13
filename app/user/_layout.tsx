@@ -19,6 +19,7 @@ import {
 import "@/global.css";
 import {
   Boxes,
+  CircleAlert,
   LayoutDashboard,
   LogOut,
   NotepadText,
@@ -242,6 +243,41 @@ export default function RootLayout() {
                     }}
                   />
                   <Drawer.Screen
+                    name="records"
+                    options={{
+                      title: "Records",
+                      drawerIcon: ({ color }) => (
+                        <NotepadText color={color} size={25} className="mr-2" />
+                      ),
+                      headerTitle: () => (
+                        <>
+                          <HStack style={{ alignItems: "center" }}>
+                            <NotepadText
+                              color={"white"}
+                              size={25}
+                              className="mr-1"
+                            />
+                            <Heading style={{ color: "white" }}>
+                              Records
+                            </Heading>
+                          </HStack>
+                        </>
+                      ),
+                      headerStyle: {
+                        ...styles.headerSpace,
+                        backgroundColor: theme.headerBg,
+                      },
+                      headerRight: () => (
+                        <TouchableOpacity
+                          style={styles.logoutButton}
+                          onPress={handleLogout}
+                        >
+                          <LogOut size={16} color="#ef4444" />
+                        </TouchableOpacity>
+                      ),
+                    }}
+                  />
+                  <Drawer.Screen
                     name="inventory"
                     options={{
                       title: "Inventory",
@@ -254,6 +290,41 @@ export default function RootLayout() {
                             <Boxes color={"white"} size={25} className="mr-1" />
                             <Heading style={{ color: "white" }}>
                               Inventory
+                            </Heading>
+                          </HStack>
+                        </>
+                      ),
+                      headerStyle: {
+                        ...styles.headerSpace,
+                        backgroundColor: theme.headerBg,
+                      },
+                      headerRight: () => (
+                        <TouchableOpacity
+                          style={styles.logoutButton}
+                          onPress={handleLogout}
+                        >
+                          <LogOut size={16} color="#ef4444" />
+                        </TouchableOpacity>
+                      ),
+                    }}
+                  />
+                  <Drawer.Screen
+                    name="termsAndCondition"
+                    options={{
+                      title: "Terms and Conditions",
+                      drawerIcon: ({ color }) => (
+                        <CircleAlert color={color} size={25} className="mr-2" />
+                      ),
+                      headerTitle: () => (
+                        <>
+                          <HStack style={{ alignItems: "center" }}>
+                            <CircleAlert
+                              color={"white"}
+                              size={25}
+                              className="mr-1"
+                            />
+                            <Heading style={{ color: "white" }}>
+                              Terms and Conditions
                             </Heading>
                           </HStack>
                         </>

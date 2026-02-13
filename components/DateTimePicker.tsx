@@ -16,12 +16,16 @@ type Props = {
   value: Date | null;
   onChange: (date: Date | null) => void;
   placeholder?: string;
+  minimumDate?: Date;
+  maximumDate?: Date;
 };
 
 export default function DateTimePicker({
   value,
   onChange,
   placeholder = "Select date",
+  minimumDate,
+  maximumDate,
 }: Props) {
   const [showModal, setShowModal] = useState(false);
   const dimensions = useWindowDimensions();
@@ -50,70 +54,6 @@ export default function DateTimePicker({
   // WEB VERSION
   if (Platform.OS === "web" && isMobile) {
     return (
-      // <View style={styles.container}>
-      //   <Pressable onPress={() => setShowModal(true)} style={styles.button}>
-      //     <Text style={[styles.buttonText, !value && styles.placeholderText]}>
-      //       {formatDate(value)}
-      //     </Text>
-      //   </Pressable>
-
-      //   {showModal && (
-      //     <Modal
-      //       visible
-      //       transparent
-      //       animationType="fade"
-      //       onRequestClose={() => setShowModal(false)}
-      //     >
-      //       <Pressable
-      //         style={styles.modalOverlay}
-      //         onPress={() => setShowModal(false)}
-      //       >
-      //         <Pressable
-      //           style={styles.modalContent}
-      //           onPress={(e) => e.stopPropagation()}
-      //         >
-      //           <View style={styles.modalHeader}>
-      //             <Text style={styles.modalTitle}>Select Date</Text>
-      //             <Pressable
-      //               onPress={() => setShowModal(false)}
-      //               style={styles.closeButton}
-      //             >
-      //               <Text style={styles.closeText}>×</Text>
-      //             </Pressable>
-      //           </View>
-
-      //           <View style={styles.inputContainer}>
-      //             <input
-      //               type="date"
-      //               value={formatInputValue(value)}
-      //               onChange={(e) => {
-      //                 const newDate = e.target.value
-      //                   ? new Date(e.target.value)
-      //                   : null
-      //                 onChange(newDate)
-      //               }}
-      //               style={{
-      //                 width: '100%',
-      //                 padding: 12,
-      //                 fontSize: 16,
-      //                 border: '1px solid #ddd',
-      //                 borderRadius: 8,
-      //                 outline: 'none',
-      //               }}
-      //             />
-      //           </View>
-
-      //           <Pressable
-      //             onPress={() => setShowModal(false)}
-      //             style={styles.doneButton}
-      //           >
-      //             <Text style={styles.doneButtonText}>Done</Text>
-      //           </Pressable>
-      //         </Pressable>
-      //       </Pressable>
-      //     </Modal>
-      //   )}
-      // </View>
       <View style={styles.container}>
         <Text
           style={{ position: "absolute", marginLeft: 10, color: "#999999" }}
@@ -123,6 +63,8 @@ export default function DateTimePicker({
         <input
           type="date"
           value={formatInputValue(value)}
+          min={minimumDate ? formatInputValue(minimumDate) : undefined}
+          max={maximumDate ? formatInputValue(maximumDate) : undefined}
           onChange={(e) => {
             const newDate = e.target.value ? new Date(e.target.value) : null;
             onChange(newDate);
@@ -144,6 +86,8 @@ export default function DateTimePicker({
         <input
           type="date"
           value={formatInputValue(value)}
+          min={minimumDate ? formatInputValue(minimumDate) : undefined}
+          max={maximumDate ? formatInputValue(maximumDate) : undefined}
           onChange={(e) => {
             const newDate = e.target.value ? new Date(e.target.value) : null;
             onChange(newDate);
@@ -202,6 +146,8 @@ export default function DateTimePicker({
                 mode="date"
                 display={Platform.OS === "ios" ? "spinner" : "default"}
                 onChange={handleDateChange}
+                minimumDate={minimumDate}
+                maximumDate={maximumDate}
               />
 
               <Pressable

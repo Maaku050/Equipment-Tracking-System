@@ -1,5 +1,13 @@
+// _modals/addEquipmentModal.tsx
 import React, { useState } from "react";
-import { Alert, ScrollView, Text } from "react-native";
+import {
+  Alert,
+  ScrollView,
+  Text,
+  Image,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import {
   Modal,
   ModalBackdrop,
@@ -28,13 +36,15 @@ import {
 } from "@/components/ui/select";
 import { ChevronDownIcon, CloseIcon, Icon } from "@/components/ui/icon";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/firebase/firebaseConfig";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, storage } from "@/firebase/firebaseConfig";
 import { HStack } from "@/components/ui/hstack";
 import {
   FormControl,
   FormControlLabel,
   FormControlError,
 } from "@/components/ui/form-control";
+import * as ImagePicker from "expo-image-picker";
 
 interface AddEquipmentModalProps {
   visible: boolean;
@@ -54,8 +64,8 @@ export default function AddEquipmentModal({
     pricePerUnit: "",
     condition: "good",
     status: "available",
-    imageUrl: "",
   });
+  const [imageUri, setImageUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -67,14 +77,81 @@ export default function AddEquipmentModal({
       pricePerUnit: "",
       condition: "good",
       status: "available",
-      imageUrl: "",
     });
+    setImageUri(null);
     setErrors({});
   };
 
   const handleClose = () => {
     resetForm();
     onClose();
+  };
+
+  const pickImage = async () => {
+    try {
+      // Request permission
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission Denied",
+          "Sorry, we need camera roll permissions to upload images.",
+        );
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images",
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setImageUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error("Error picking image:", error);
+      Alert.alert("Error", "Failed to pick image");
+    }
+  };
+
+  const removeImage = () => {
+    setImageUri(null);
+  };
+
+  const uploadImage = async (
+    equipmentId: string,
+  ): Promise<{ imageUrl: string; imagePath: string }> => {
+    if (!imageUri) return { imageUrl: "", imagePath: "" };
+
+    try {
+      // Convert image URI to blob
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+
+      // Create a unique filename
+      const filename = `${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+
+      // Create storage path
+      const imagePath = `equipment-images/${equipmentId}/${filename}`;
+
+      // Create storage reference
+      const storageRef = ref(storage, imagePath);
+
+      // Upload the image
+      await uploadBytes(storageRef, blob);
+
+      // Get download URL
+      const downloadURL = await getDownloadURL(storageRef);
+
+      return { imageUrl: downloadURL, imagePath };
+    } catch (error) {
+      console.error("Error uploading image:", error);
+      throw error;
+    }
   };
 
   const validateForm = (): boolean => {
@@ -110,7 +187,8 @@ export default function AddEquipmentModal({
 
       const totalQty = parseInt(formData.totalQuantity);
 
-      await addDoc(collection(db, "equipment"), {
+      // First, create the equipment document
+      const docRef = await addDoc(collection(db, "equipment"), {
         name: formData.name,
         description: formData.description,
         totalQuantity: totalQty,
@@ -119,10 +197,23 @@ export default function AddEquipmentModal({
         pricePerUnit: parseFloat(formData.pricePerUnit),
         condition: formData.condition,
         status: formData.status,
-        imageUrl: formData.imageUrl || "",
+        imageUrl: "", // Will be updated if image exists
+        imagePath: "", // Store the storage path for easy deletion
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      // Upload image if selected and update the document
+      if (imageUri) {
+        const { imageUrl, imagePath } = await uploadImage(docRef.id);
+
+        // Update the document with the image URL and path
+        const { doc, updateDoc } = await import("firebase/firestore");
+        await updateDoc(doc(db, "equipment", docRef.id), {
+          imageUrl: imageUrl,
+          imagePath: imagePath,
+        });
+      }
 
       Alert.alert("Success", "Equipment added successfully!");
       resetForm();
@@ -139,7 +230,7 @@ export default function AddEquipmentModal({
   return (
     <Modal isOpen={visible} onClose={handleClose} size="lg">
       <ModalBackdrop />
-      <ModalContent>
+      <ModalContent className={"max-w-6xl h-[90vh]"}>
         <ModalHeader>
           <Heading size="md">Add New Equipment</Heading>
           <ModalCloseButton>
@@ -149,8 +240,82 @@ export default function AddEquipmentModal({
 
         <ModalBody>
           <HStack space="sm" style={{ flex: 1 }}>
+            {/* Image Upload */}
+            <FormControl style={{ flex: 1 }}>
+              <FormControlLabel>
+                <Text>Equipment Image (Optional)</Text>
+              </FormControlLabel>
+
+              <VStack space="sm">
+                {imageUri ? (
+                  <Image
+                    source={{ uri: imageUri }}
+                    style={{
+                      width: "100%",
+                      height: 300,
+                      borderRadius: 8,
+                      backgroundColor: "#f0f0f0",
+                    }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View
+                    style={{
+                      width: "100%",
+                      height: 300,
+                      borderRadius: 8,
+                      backgroundColor: "#e5e5e5",
+                      justifyContent: "center",
+                      alignItems: "center",
+                      borderWidth: 2,
+                      borderColor: "#d4d4d4",
+                      borderStyle: "dashed",
+                    }}
+                  >
+                    <Icon
+                      as={Image}
+                      size="xl"
+                      className="text-typography-400 mb-2"
+                    />
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        color: "#737373",
+                        fontWeight: "500",
+                      }}
+                    >
+                      No Image Selected
+                    </Text>
+                  </View>
+                )}
+                <HStack space="sm">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={pickImage}
+                    style={{ flex: 1 }}
+                  >
+                    <ButtonText>
+                      {imageUri ? "Change Image" : "Select Image"}
+                    </ButtonText>
+                  </Button>
+                  {imageUri && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      action="negative"
+                      onPress={removeImage}
+                      style={{ flex: 1 }}
+                    >
+                      <ButtonText>Remove</ButtonText>
+                    </Button>
+                  )}
+                </HStack>
+              </VStack>
+            </FormControl>
+
             {/* LEFT COLUMN */}
-            <VStack space="md" style={{ flex: 1 }}>
+            <VStack space="sm" style={{ flex: 1 }}>
               {/* Equipment Name */}
               <FormControl isRequired isInvalid={!!errors.name}>
                 <FormControlLabel>
@@ -178,7 +343,7 @@ export default function AddEquipmentModal({
                 <FormControlLabel>
                   <Text>Description</Text>
                 </FormControlLabel>
-                <Textarea style={{ minHeight: 115 }}>
+                <Textarea style={{ minHeight: 193 }}>
                   <TextareaInput
                     placeholder="e.g., Fluke 87V Digital Multimeter"
                     value={formData.description}
@@ -194,49 +359,10 @@ export default function AddEquipmentModal({
                   </FormControlError>
                 )}
               </FormControl>
-
-              {/* Image URL */}
-              <FormControl>
-                <FormControlLabel>
-                  <Text>Image URL (Optional)</Text>
-                </FormControlLabel>
-                <Input>
-                  <InputField
-                    placeholder="Enter image URL"
-                    value={formData.imageUrl}
-                    onChangeText={(v) =>
-                      setFormData({ ...formData, imageUrl: v })
-                    }
-                  />
-                </Input>
-              </FormControl>
             </VStack>
 
             {/* RIGHT COLUMN */}
             <VStack space="md" style={{ flex: 1 }}>
-              {/* Total Quantity */}
-              <FormControl isRequired isInvalid={!!errors.totalQuantity}>
-                <FormControlLabel>
-                  <Text>Total Quantity</Text>
-                </FormControlLabel>
-                <Input>
-                  <InputField
-                    placeholder="Enter quantity"
-                    keyboardType="numeric"
-                    value={formData.totalQuantity}
-                    onChangeText={(v) => {
-                      setFormData({ ...formData, totalQuantity: v });
-                      setErrors((e) => ({ ...e, totalQuantity: "" }));
-                    }}
-                  />
-                </Input>
-                {errors.totalQuantity && (
-                  <FormControlError>
-                    <Text>{errors.totalQuantity}</Text>
-                  </FormControlError>
-                )}
-              </FormControl>
-
               {/* Price Per Unit */}
               <FormControl isRequired isInvalid={!!errors.pricePerUnit}>
                 <FormControlLabel>
@@ -315,6 +441,29 @@ export default function AddEquipmentModal({
                   </SelectPortal>
                 </Select>
               </FormControl>
+
+              {/* Total Quantity */}
+              <FormControl isRequired isInvalid={!!errors.totalQuantity}>
+                <FormControlLabel>
+                  <Text>Total Quantity</Text>
+                </FormControlLabel>
+                <Input>
+                  <InputField
+                    placeholder="Enter quantity"
+                    keyboardType="numeric"
+                    value={formData.totalQuantity}
+                    onChangeText={(v) => {
+                      setFormData({ ...formData, totalQuantity: v });
+                      setErrors((e) => ({ ...e, totalQuantity: "" }));
+                    }}
+                  />
+                </Input>
+                {errors.totalQuantity && (
+                  <FormControlError>
+                    <Text>{errors.totalQuantity}</Text>
+                  </FormControlError>
+                )}
+              </FormControl>
             </VStack>
           </HStack>
         </ModalBody>
@@ -325,6 +474,7 @@ export default function AddEquipmentModal({
             action="secondary"
             onPress={handleClose}
             className="mr-3"
+            disabled={loading}
           >
             <ButtonText>Cancel</ButtonText>
           </Button>

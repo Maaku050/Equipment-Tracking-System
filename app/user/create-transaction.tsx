@@ -19,6 +19,7 @@ import {
   writeBatch,
   doc,
   getDoc,
+  updateDoc,
   serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
@@ -39,6 +40,7 @@ import {
 import { useUsers } from "@/context/UsersContext";
 import { Image } from "@/components/ui/image";
 import DateTimePicker from "@/components/DateTimePicker";
+import TermsAndConditionsModal from "@/_modals/TermsAndConditionsModal";
 
 interface Equipment {
   id: string;
@@ -72,6 +74,22 @@ export default function CreateTransactionScreen() {
   const [dueDate, setDueDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingEquipment, setLoadingEquipment] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [acceptingTerms, setAcceptingTerms] = useState(false);
+
+  // Calculate minimum date (today) and maximum date (7 days from today)
+  const getMinDate = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  };
+
+  const getMaxDate = () => {
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + 7);
+    maxDate.setHours(23, 59, 59, 999);
+    return maxDate;
+  };
 
   const resetScreenState = useCallback(() => {
     setCart([]);
@@ -190,6 +208,56 @@ export default function CreateTransactionScreen() {
       return;
     }
 
+    // Check if user has agreed to terms
+    if (!studentData.agreedToTermsAndCondition) {
+      setShowTermsModal(true);
+      return;
+    }
+
+    // Proceed with normal validation
+    await processTransaction();
+  };
+
+  const handleAcceptTerms = async () => {
+    if (!currentUser) return;
+
+    try {
+      setAcceptingTerms(true);
+
+      // Update user document with agreed terms flag
+      const userRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userRef, {
+        agreedToTermsAndCondition: true,
+        termsAcceptedAt: serverTimestamp(),
+      });
+
+      // Close modal
+      setShowTermsModal(false);
+
+      // Proceed with transaction
+      await processTransaction();
+    } catch (error) {
+      console.error("Error accepting terms:", error);
+      Alert.alert("Error", "Failed to accept terms. Please try again.");
+    } finally {
+      setAcceptingTerms(false);
+    }
+  };
+
+  const handleDeclineTerms = () => {
+    setShowTermsModal(false);
+    Alert.alert(
+      "Terms Required",
+      "You must accept the Terms and Conditions to borrow equipment.",
+    );
+  };
+
+  const processTransaction = async () => {
+    if (!currentUser || !studentData) {
+      Alert.alert("Error", "User not found");
+      return;
+    }
+
     if (cart.length === 0) {
       Alert.alert("Error", "Please add at least one item to your cart");
       return;
@@ -200,13 +268,18 @@ export default function CreateTransactionScreen() {
       return;
     }
 
-    // Validate due date is in the future
+    // Validate due date is within the allowed range
     const selectedDate = new Date(dueDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const minDate = getMinDate();
+    const maxDate = getMaxDate();
 
-    if (selectedDate <= today) {
-      Alert.alert("Error", "Due date must be in the future");
+    if (selectedDate < minDate) {
+      Alert.alert("Error", "Due date cannot be in the past");
+      return;
+    }
+
+    if (selectedDate > maxDate) {
+      Alert.alert("Error", "Due date cannot be more than 7 days from today");
       return;
     }
 
@@ -358,7 +431,16 @@ export default function CreateTransactionScreen() {
           {/* Due Date Section */}
           <Box style={styles.section}>
             <Text style={styles.sectionTitle}>Due Date *</Text>
-            <DateTimePicker value={dueDate} onChange={setDueDate} />
+            <Text style={styles.dateHelperText}>
+              Select a date between today and 7 days from now
+            </Text>
+            <DateTimePicker
+              value={dueDate}
+              onChange={setDueDate}
+              minimumDate={getMinDate()}
+              maximumDate={getMaxDate()}
+              placeholder="Select due date"
+            />
           </Box>
 
           {/* Equipment Browsing Section */}
@@ -397,14 +479,14 @@ export default function CreateTransactionScreen() {
             <HStack style={styles.cartHeader}>
               <ShoppingCart size={20} color="#1f2937" />
               <Text style={styles.cartTitle}>
-                Your Cart ({cart.length} items)
+                Your Item ({cart.length} items)
               </Text>
             </HStack>
 
             {cart.length === 0 ? (
               <Box style={styles.emptyCart}>
                 <ShoppingCart size={48} color="#d1d5db" />
-                <Text style={styles.emptyCartText}>No items in cart yet</Text>
+                <Text style={styles.emptyCartText}>No items yet</Text>
                 <Text style={styles.emptyCartSubtext}>
                   Browse equipment above to add items
                 </Text>
@@ -473,6 +555,14 @@ export default function CreateTransactionScreen() {
           )}
         </Button>
       </Box>
+
+      {/* Terms and Conditions Modal */}
+      <TermsAndConditionsModal
+        visible={showTermsModal}
+        onAccept={handleAcceptTerms}
+        onDecline={handleDeclineTerms}
+        loading={acceptingTerms}
+      />
     </Box>
   );
 }
@@ -533,7 +623,7 @@ function EquipmentCard({
             setQuantity(1);
           }}
         >
-          <ButtonText>Add to Cart</ButtonText>
+          <ButtonText>Add item</ButtonText>
         </Button>
       </HStack>
     </Box>
@@ -617,6 +707,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#1f2937",
+  },
+  dateHelperText: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: -8,
   },
   loadingContainer: {
     padding: 40,

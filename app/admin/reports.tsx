@@ -1,4 +1,4 @@
-// app/admin/reports.tsx | Reports Interface with Multiple Charts
+// app/admin/reports.tsx | Reports Interface with Multiple Charts + Damage/Lost Tracking
 import React, { useState, useEffect } from "react";
 import {
   StyleSheet,
@@ -26,10 +26,12 @@ import {
   SearchIcon,
   XIcon,
   PrinterIcon,
+  AlertTriangle,
 } from "lucide-react-native";
 import { useRecords, RecordStatus } from "@/context/RecordsContext";
 import DateTimePicker from "@/components/DateTimePicker";
 import { HStack } from "@/components/ui/hstack";
+import { VStack } from "@/components/ui/vstack";
 import {
   LineChart,
   BarChart,
@@ -80,6 +82,7 @@ export default function RecordsReport() {
     "Complete",
     "Incomplete",
     "Complete and Overdue",
+    "Incomplete and Overdue",
   ];
 
   const chartTabs = [
@@ -182,8 +185,22 @@ export default function RecordsReport() {
         <td style="padding: 4px 6px; border-bottom: 1px solid #e5e7eb; text-align: center; font-size: 11px;">${item.quantity}</td>
         <td style="padding: 4px 6px; border-bottom: 1px solid #e5e7eb; text-align: right; font-size: 11px;">₱${item.pricePerQuantity.toFixed(2)}</td>
         <td style="padding: 4px 6px; border-bottom: 1px solid #e5e7eb; text-align: center; font-size: 11px;">${item.returnedQuantity}/${item.quantity}</td>
+        <td style="padding: 4px 6px; border-bottom: 1px solid #e5e7eb; text-align: center; font-size: 11px;">${item.damagedQuantity || 0}</td>
+        <td style="padding: 4px 6px; border-bottom: 1px solid #e5e7eb; text-align: center; font-size: 11px;">${item.lostQuantity || 0}</td>
         <td style="padding: 4px 6px; border-bottom: 1px solid #e5e7eb; text-align: right; font-size: 11px;">₱${(item.pricePerQuantity * item.quantity).toFixed(2)}</td>
       </tr>
+      ${
+        (item.damagedQuantity > 0 || item.lostQuantity > 0) && item.damageNotes
+          ? `
+      <tr>
+        <td colspan="7" style="padding: 4px 6px 8px 6px; border-bottom: 1px solid #e5e7eb; background-color: #fef2f2;">
+          <span style="font-size: 9px; color: #991b1b; font-weight: 600;">⚠️ Note: </span>
+          <span style="font-size: 10px; color: #7f1d1d; font-style: italic;">${item.damageNotes}</span>
+        </td>
+      </tr>
+      `
+          : ""
+      }
     `,
         )
         .join("");
@@ -215,6 +232,8 @@ export default function RecordsReport() {
                 <th style="padding: 4px 6px; text-align: center; font-size: 10px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Qty</th>
                 <th style="padding: 4px 6px; text-align: right; font-size: 10px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Price/Unit</th>
                 <th style="padding: 4px 6px; text-align: center; font-size: 10px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Returned</th>
+                <th style="padding: 4px 6px; text-align: center; font-size: 10px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Damaged</th>
+                <th style="padding: 4px 6px; text-align: center; font-size: 10px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Lost</th>
                 <th style="padding: 4px 6px; text-align: right; font-size: 10px; font-weight: 600; border-bottom: 1px solid #e5e7eb;">Total</th>
               </tr>
             </thead>
@@ -312,17 +331,15 @@ export default function RecordsReport() {
   const getStatusColor = (status: RecordStatus) => {
     switch (status) {
       case "Complete":
-        return "#10b981";
-      case "Incomplete":
-        return "#f97316";
-      case "Overdue":
-        return "#ef4444";
-      case "Incomplete and Overdue":
-        return "#dc2626";
+        return "#10b981"; // Green - all good
       case "Complete and Overdue":
-        return "#f59e0b";
+        return "#f59e0b"; // Amber - late but returned
+      case "Incomplete":
+        return "#f97316"; // Orange - missing items
+      case "Incomplete and Overdue":
+        return "#dc2626"; // Red - missing items + late
       default:
-        return "#6b7280";
+        return "#6b7280"; // Gray
     }
   };
 
@@ -1015,22 +1032,70 @@ export default function RecordsReport() {
                     </View>
                     <View style={styles.itemsSection}>
                       {record.items.map((item) => (
-                        <View key={item.id} style={styles.itemRow}>
-                          <View style={styles.itemLeft}>
-                            <Text style={styles.itemName}>{item.itemName}</Text>
-                            <Text style={styles.itemDetails}>
-                              Qty: {item.quantity} | ₱{item.pricePerQuantity}{" "}
-                              each
+                        <VStack key={item.id} style={styles.itemRow}>
+                          <HStack style={styles.itemMainRow}>
+                            <View style={styles.itemLeft}>
+                              <Text style={styles.itemName}>
+                                {item.itemName}
+                              </Text>
+                              <Text style={styles.itemDetails}>
+                                Qty: {item.quantity} | ₱{item.pricePerQuantity}{" "}
+                                each
+                              </Text>
+                              <Text style={styles.returnedInfo}>
+                                Returned: {item.returnedQuantity}/
+                                {item.quantity}
+                              </Text>
+                            </View>
+                            <Text style={styles.itemPrice}>
+                              ₱
+                              {(item.pricePerQuantity * item.quantity).toFixed(
+                                2,
+                              )}
                             </Text>
-                            <Text style={styles.returnedInfo}>
-                              Returned: {item.returnedQuantity}/{item.quantity}
-                            </Text>
-                          </View>
-                          <Text style={styles.itemPrice}>
-                            ₱
-                            {(item.pricePerQuantity * item.quantity).toFixed(2)}
-                          </Text>
-                        </View>
+                          </HStack>
+
+                          {/* Damage/Lost Section */}
+                          {(item.damagedQuantity > 0 ||
+                            item.lostQuantity > 0) && (
+                            <VStack style={styles.damageSection}>
+                              {item.damagedQuantity > 0 && (
+                                <HStack
+                                  style={{ alignItems: "center", gap: 4 }}
+                                >
+                                  <AlertTriangle size={12} color="#f59e0b" />
+                                  <Text style={styles.damagedText}>
+                                    Damaged: {item.damagedQuantity} (₱
+                                    {(
+                                      item.damagedQuantity *
+                                      item.pricePerQuantity
+                                    ).toFixed(2)}
+                                    )
+                                  </Text>
+                                </HStack>
+                              )}
+                              {item.lostQuantity > 0 && (
+                                <HStack
+                                  style={{ alignItems: "center", gap: 4 }}
+                                >
+                                  <AlertTriangle size={12} color="#ef4444" />
+                                  <Text style={styles.lostText}>
+                                    Lost: {item.lostQuantity} (₱
+                                    {(
+                                      item.lostQuantity * item.pricePerQuantity
+                                    ).toFixed(2)}
+                                    )
+                                  </Text>
+                                </HStack>
+                              )}
+                              {item.damageNotes && (
+                                <Text style={styles.damageNotes}>
+                                  Note: {item.damageNotes}
+                                </Text>
+                              )}
+                            </VStack>
+                          )}
+                        </VStack>
                       ))}
                     </View>
                     <View style={styles.summarySection}>
@@ -1548,12 +1613,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#f9fafb",
   },
   itemRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
     marginBottom: 12,
+    gap: 8,
+  },
+  itemMainRow: {
+    justifyContent: "space-between",
   },
   itemLeft: {
     flex: 1,
@@ -1578,6 +1645,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#1f2937",
+  },
+  damageSection: {
+    marginTop: 4,
+    paddingLeft: 12,
+    borderLeftWidth: 2,
+    borderLeftColor: "#fecaca",
+    gap: 4,
+  },
+  damagedText: {
+    fontSize: 12,
+    color: "#f59e0b",
+    fontWeight: "600",
+  },
+  lostText: {
+    fontSize: 12,
+    color: "#ef4444",
+    fontWeight: "600",
+  },
+  damageNotes: {
+    fontSize: 11,
+    color: "#6b7280",
+    fontStyle: "italic",
+    marginTop: 4,
   },
   summarySection: {
     padding: 16,

@@ -16,6 +16,7 @@ import { HStack } from "@/components/ui/hstack";
 import { VStack } from "@/components/ui/vstack";
 import { Fab, FabIcon } from "@/components/ui/fab";
 import TransactionAccordion from "@/components/TransactionAccordion";
+import Pagination from "@/components/customPagination";
 import { TransactionStatus } from "@/_helpers/firebaseHelpers";
 import { useTransaction } from "@/context/TransactionContext";
 import { useRecords } from "@/context/RecordsContext";
@@ -29,17 +30,19 @@ import {
   AlertTriangle,
   XCircle,
   Calendar,
+  History,
+  DollarSign,
 } from "lucide-react-native";
 import { useUsers } from "@/context/UsersContext";
-import { signOut } from "firebase/auth";
 
-// Extended status type to include "Complete" from records
+// Extended status type - NOTE: No longer includes "Complete" or "Complete and Overdue"
 type ExtendedStatus =
   | TransactionStatus
-  | "Complete"
   | "Incomplete"
   | "Incomplete and Ondue"
   | "Incomplete and Overdue";
+
+const ITEMS_PER_PAGE = 15;
 
 export default function StudentDashboard() {
   const params = useLocalSearchParams();
@@ -62,6 +65,7 @@ export default function StudentDashboard() {
   } = useRecords();
 
   const [filteredItems, setFilteredItems] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
 
   const filterButtons: {
@@ -93,12 +97,6 @@ export default function StudentDashboard() {
       color: "#dc2626",
     },
     {
-      status: "Complete",
-      label: "Completed",
-      icon: CheckCircle,
-      color: "#10b981",
-    },
-    {
       status: "Overdue",
       label: "Overdue",
       icon: AlertCircle,
@@ -114,62 +112,23 @@ export default function StudentDashboard() {
     incomplete: "#ea580c",
     overdue: "#dc2626",
     completed: "#059669",
+    fines: "#ef4444",
   };
 
   useEffect(() => {
     if (!currentUser) return;
 
+    // ONLY SHOW ACTIVE TRANSACTIONS (exclude completed records)
     let filtered: any[] = [];
 
-    // Handle "Complete" status - fetch from records collection
-    if (statusParam === "Complete") {
-      const userRecords = records.filter(
-        (record) =>
-          record.studentId === currentUser.uid &&
-          (record.finalStatus === "Complete" ||
-            record.finalStatus === "Complete and Overdue"),
-      );
-      filtered = userRecords;
-    }
-    // Handle "Incomplete" status
-    else if (statusParam === "Incomplete") {
-      const userTransactions = transactions.filter(
-        (transaction) =>
-          transaction.studentId === currentUser.uid &&
-          transaction.status === "Incomplete",
-      );
-      filtered = userTransactions;
-    }
-    // Handle "Incomplete and Ondue" status
-    else if (statusParam === "Incomplete and Ondue") {
-      const userTransactions = transactions.filter(
-        (transaction) =>
-          transaction.studentId === currentUser.uid &&
-          transaction.status === "Incomplete and Ondue",
-      );
-      filtered = userTransactions;
-    }
-    // Handle "Incomplete and Overdue" status
-    else if (statusParam === "Incomplete and Overdue") {
-      const userTransactions = transactions.filter(
-        (transaction) =>
-          transaction.studentId === currentUser.uid &&
-          transaction.status === "Incomplete and Overdue",
-      );
-      filtered = userTransactions;
-    }
-    // Handle "All" - combine active transactions and completed records
-    else if (statusParam === "All") {
+    if (statusParam === "All") {
+      // Show all active transactions only
       const userTransactions = transactions.filter(
         (transaction) => transaction.studentId === currentUser.uid,
       );
-      const userRecords = records.filter(
-        (record) => record.studentId === currentUser.uid,
-      );
-      filtered = [...userTransactions, ...userRecords];
-    }
-    // Handle other transaction statuses (Request, Ongoing, Ondue, Overdue)
-    else {
+      filtered = userTransactions;
+    } else {
+      // Handle specific transaction statuses
       const allTransactions = getTransactionsByStatus(statusParam);
       const userTransactions = allTransactions.filter(
         (transaction) => transaction.studentId === currentUser.uid,
@@ -185,7 +144,8 @@ export default function StudentDashboard() {
     });
 
     setFilteredItems(filtered);
-  }, [statusParam, transactions, records, currentUser]);
+    setCurrentPage(1);
+  }, [statusParam, transactions, currentUser]);
 
   useEffect(() => {
     if (transactionsError) {
@@ -212,37 +172,28 @@ export default function StudentDashboard() {
     router.push("/user/edit-profile");
   };
 
-  const handleLogout = () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await signOut(auth);
-            router.replace("./");
-          } catch (error) {
-            console.error("Logout error:", error);
-            Alert.alert("Error", "Failed to logout");
-          }
-        },
-      },
-    ]);
+  const handleViewHistory = () => {
+    router.push("/user/records");
   };
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
-    // The cloud function handles updates, so just wait a moment
     await new Promise((resolve) => setTimeout(resolve, 1000));
     setRefreshing(false);
   }, []);
 
-  // Calculate quick stats (including records)
+  // Calculate quick stats (ONLY active transactions)
+  const userRecords = records.filter((r) => r.studentId === currentUser?.uid);
+  const totalFines = userRecords.reduce(
+    (sum, r) => sum + (r.fineAmount || 0),
+    0,
+  );
+  const pendingFines = userRecords
+    .filter((r) => r.fineAmount > 0 && !r.finePaid)
+    .reduce((sum, r) => sum + r.fineAmount, 0);
+
   const stats = {
-    total:
-      transactions.filter((t) => t.studentId === currentUser?.uid).length +
-      records.filter((r) => r.studentId === currentUser?.uid).length,
+    total: transactions.filter((t) => t.studentId === currentUser?.uid).length,
     pending: transactions.filter(
       (t) => t.studentId === currentUser?.uid && t.status === "Request",
     ).length,
@@ -266,9 +217,19 @@ export default function StudentDashboard() {
           t.status === "Incomplete and Ondue" ||
           t.status === "Incomplete and Overdue"),
     ).length,
-    completed: records.filter(
-      (r) => r.studentId === currentUser?.uid && r.finalStatus === "Complete",
-    ).length,
+    completed: userRecords.length,
+    totalFines,
+    pendingFines,
+  };
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const paginatedItems = filteredItems.slice(startIndex, endIndex);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
   };
 
   const loading = transactionsLoading || recordsLoading;
@@ -331,6 +292,25 @@ export default function StudentDashboard() {
             style={styles.statsScrollView}
           >
             <HStack style={styles.statsContainer} space="sm">
+              {stats.totalFines > 0 ? (
+                <Box
+                  style={{
+                    ...styles.statCard,
+                    borderLeftColor: STAT_COLORS.fines,
+                  }}
+                >
+                  <Text
+                    style={{
+                      ...styles.statNumber,
+                      ...styles.fineTotalAmount,
+                    }}
+                  >
+                    ₱{stats.totalFines.toFixed(2)}
+                  </Text>
+                  <Text style={styles.statLabel}>Fines</Text>
+                </Box>
+              ) : null}
+
               <Box
                 style={{
                   ...styles.statCard,
@@ -345,7 +325,7 @@ export default function StudentDashboard() {
                 >
                   {stats.total}
                 </Text>
-                <Text style={styles.statLabel}>Total</Text>
+                <Text style={styles.statLabel}>Active</Text>
               </Box>
 
               <Box
@@ -368,35 +348,18 @@ export default function StudentDashboard() {
               <Box
                 style={{
                   ...styles.statCard,
-                  borderLeftColor: STAT_COLORS.active,
+                  borderLeftColor: STAT_COLORS.overdue,
                 }}
               >
                 <Text
                   style={{
                     ...styles.statNumber,
-                    color: STAT_COLORS.active,
+                    color: STAT_COLORS.overdue,
                   }}
                 >
-                  {stats.active}
+                  {stats.overdue}
                 </Text>
-                <Text style={styles.statLabel}>Active</Text>
-              </Box>
-
-              <Box
-                style={{
-                  ...styles.statCard,
-                  borderLeftColor: STAT_COLORS.ondue,
-                }}
-              >
-                <Text
-                  style={{
-                    ...styles.statNumber,
-                    color: STAT_COLORS.ondue,
-                  }}
-                >
-                  {stats.ondue}
-                </Text>
-                <Text style={styles.statLabel}>Due Today</Text>
+                <Text style={styles.statLabel}>Overdue</Text>
               </Box>
 
               <Box
@@ -414,23 +377,6 @@ export default function StudentDashboard() {
                   {stats.incomplete}
                 </Text>
                 <Text style={styles.statLabel}>Incomplete</Text>
-              </Box>
-
-              <Box
-                style={{
-                  ...styles.statCard,
-                  borderLeftColor: STAT_COLORS.overdue,
-                }}
-              >
-                <Text
-                  style={{
-                    ...styles.statNumber,
-                    color: STAT_COLORS.overdue,
-                  }}
-                >
-                  {stats.overdue}
-                </Text>
-                <Text style={styles.statLabel}>Overdue</Text>
               </Box>
 
               <Box
@@ -491,23 +437,34 @@ export default function StudentDashboard() {
           })}
         </ScrollView>
 
-        {/* Transactions/Records List */}
+        {/* Transactions List */}
         <Box style={styles.transactionsContainer}>
           <HStack style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>
               {statusParam === "All"
-                ? "All Transactions"
+                ? "Active Transactions"
                 : `${filterButtons.find((f) => f.status === statusParam)?.label} Transactions`}
             </Text>
             <Text style={styles.sectionCount}>{filteredItems.length}</Text>
           </HStack>
 
           <TransactionAccordion
-            transactions={filteredItems}
+            transactions={paginatedItems}
             onDelete={undefined}
             loading={loading}
             isUserView={true}
           />
+
+          {/* Pagination */}
+          {filteredItems.length > ITEMS_PER_PAGE && (
+            <Box style={styles.paginationContainer}>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={handlePageChange}
+              />
+            </Box>
+          )}
         </Box>
       </ScrollView>
 
@@ -595,6 +552,28 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#ffffff",
   },
+  actionButtonsRow: {
+    marginTop: 16,
+    paddingHorizontal: 10,
+  },
+  historyButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+  },
+  historyButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#ffffff",
+  },
   statsScrollView: {
     marginTop: 16,
     borderWidth: 0,
@@ -629,6 +608,67 @@ const styles = StyleSheet.create({
     color: "#dbeafe",
     textTransform: "uppercase",
     fontWeight: "600",
+  },
+  finesCard: {
+    backgroundColor: "#ffffff",
+    marginTop: 16,
+    marginHorizontal: 10,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#fecaca",
+  },
+  finesHeader: {
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  finesTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#991b1b",
+  },
+  finesContent: {
+    gap: 8,
+  },
+  fineRow: {
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  fineLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  fineTotalAmount: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#dc2626",
+  },
+  finePendingRow: {
+    backgroundColor: "#fffbeb",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+    gap: 8,
+  },
+  finePendingLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#92400e",
+    flex: 1,
+  },
+  finePendingAmount: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#f59e0b",
+  },
+  finesNote: {
+    fontSize: 11,
+    color: "#6b7280",
+    fontStyle: "italic",
+    textAlign: "center",
+    marginTop: 4,
   },
   filterContainer: {
     paddingHorizontal: 16,
@@ -676,6 +716,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
+  },
+  paginationContainer: {
+    marginTop: 16,
   },
   fab: {
     backgroundColor: "#2563eb",

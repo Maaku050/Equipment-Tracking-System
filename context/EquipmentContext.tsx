@@ -14,9 +14,10 @@ export interface Equipment {
   availableQuantity: number;
   borrowedQuantity: number;
   pricePerUnit: number;
-  condition: EquipmentCondition;
-  status: EquipmentStatus;
-  imageUrl?: string;
+  condition: "good" | "fair" | "needs repair";
+  status: "available" | "unavailable" | "maintenance";
+  imageUrl: string;
+  imagePath: string; // 🆕 Added for easy image deletion
   createdAt: Date;
   updatedAt: Date;
 }
@@ -128,6 +129,7 @@ export const EquipmentProvider = ({
             condition: (data.condition as EquipmentCondition) || "good",
             status: (data.status as EquipmentStatus) || "available",
             imageUrl: data.imageUrl || "",
+            imagePath: data.imagePath || "",
             createdAt: data.createdAt?.toDate?.() || new Date(),
             updatedAt: data.updatedAt?.toDate?.() || new Date(),
           };

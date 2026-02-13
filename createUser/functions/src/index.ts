@@ -501,6 +501,106 @@ app.post("/createBulkUsers", async (req, res) => {
 });
 
 /**
+ * POST /deleteBulkUsers
+ * Delete multiple users at once by email
+ */
+app.post("/deleteBulkUsers", async (req, res) => {
+  console.log("=== Delete Bulk Users ===");
+
+  try {
+    const { emails } = req.body as { emails: string[] };
+
+    if (!Array.isArray(emails) || emails.length === 0) {
+      res.status(400).json({
+        status: "error",
+        message: "Invalid request. Provide array of email addresses.",
+      });
+      return;
+    }
+
+    console.log(`Processing deletion for ${emails.length} email(s)`);
+
+    const results = {
+      successful: [] as string[],
+      failed: [] as { email: string; error: string }[],
+    };
+
+    for (const email of emails) {
+      try {
+        console.log(`Processing: ${email}`);
+
+        // Get user by email
+        let userRecord;
+        try {
+          userRecord = await auth.getUserByEmail(email.trim().toLowerCase());
+        } catch (error: any) {
+          if (error.code === "auth/user-not-found") {
+            results.failed.push({
+              email,
+              error: "User not found",
+            });
+            continue;
+          }
+          throw error;
+        }
+
+        const uid = userRecord.uid;
+
+        // Get user data from Firestore to find image path
+        const userDoc = await db.collection("users").doc(uid).get();
+        const userData = userDoc.data();
+
+        // Delete from Firebase Auth
+        await auth.deleteUser(uid);
+        console.log(`✓ Deleted auth user: ${uid}`);
+
+        // Delete image from Storage
+        if (userData?.imagePath) {
+          await deleteUserImageByPath(userData.imagePath);
+        } else {
+          await deleteUserImage(uid);
+        }
+        console.log(`✓ Deleted user image: ${uid}`);
+
+        // Delete from Firestore
+        await db.collection("users").doc(uid).delete();
+        console.log(`✓ Deleted Firestore user: ${uid}`);
+
+        results.successful.push(email);
+        console.log(`✅ Successfully deleted: ${email}`);
+      } catch (error) {
+        console.error(`❌ Failed to delete ${email}:`, error);
+        results.failed.push({
+          email,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+
+    console.log(
+      `✅ Bulk delete complete: ${results.successful.length} success, ${results.failed.length} failed`,
+    );
+
+    res.status(200).json({
+      status: "success",
+      message: `Processed ${emails.length} users`,
+      data: {
+        total: emails.length,
+        successful: results.successful,
+        failed: results.failed,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error in deleteBulkUsers:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to delete bulk users",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+/**
  * GET /getUser/:uid
  * Get user by UID
  */

@@ -19,6 +19,7 @@ export interface User {
   imagePath: string;
   createdAt?: Date;
   updatedAt?: Date;
+  agreedToTermsAndCondition: Boolean;
 }
 
 export interface UserStats {
@@ -134,6 +135,8 @@ export const UsersProvider = ({ children }: { children: React.ReactNode }) => {
               imagePath: data.imagePath || "",
               createdAt: data.createdAt?.toDate?.() || new Date(),
               updatedAt: data.updatedAt?.toDate?.() || new Date(),
+              agreedToTermsAndCondition:
+                data.agreedToTermsAndCondition || false,
             };
           })
           .filter((user) => user.role !== "admin"); // Filter out admins
